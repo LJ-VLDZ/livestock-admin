@@ -1,0 +1,26 @@
+# Databases
+*.sqlite
+*.sqlite-journal
+
+# Environment credentials (CRITICAL FOR SECURITY)
+.env
+.env.backup
+.env.production
+
+# Composer dependencies (Too heavy to push, installed on server)
+/vendor/
+
+# NPM / Frontend dependencies
+/node_modules/
+/public/build/
+/public/hot
+
+# Laravel Framework Files & Caches
+/storage/*.key
+/bootstrap/cache/*
+
+# IDE and Operating System files (Optional, but keeps things clean)
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
