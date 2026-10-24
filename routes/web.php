@@ -100,6 +100,6 @@ Route::middleware(['auth'])->group(function () {
         ->name('admin.support');
 
     Route::post('/admin/support/{id}/resolve', [AdminController::class, 'resolveSupportTicket'])
-        ->name('admin.support.resolve');
+        ->name('admin.support.resolve');   
 
 });
