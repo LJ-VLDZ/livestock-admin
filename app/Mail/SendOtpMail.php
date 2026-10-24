@@ -20,6 +20,6 @@ class SendOtpMail extends Mailable
     public function build()
     {
         return $this->subject('Your Verification OTP Code')
-                    ->view('emails.otp'); // Or view('emails.send_otp') depending on your view file
+                    ->view('emails.otp');
     }
 }

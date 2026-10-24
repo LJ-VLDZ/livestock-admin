@@ -26,8 +26,8 @@ class AdminController extends Controller
         }
 
         putenv('GOOGLE_APPLICATION_CREDENTIALS=' . $credentialsPath);
-        $_ENV['GOOGLE_APPLICATION_CREDENTIALS'] = $credentialsPath;
-        $_SERVER['GOOGLE_APPLICATION_CREDENTIALS'] = $credentialsPath;
+        $_ENV['GOOGLE_APPLICATION_CREDENTIALS'] =$credentialsPath;
+        $_SERVER['GOOGLE_APPLICATION_CREDENTIALS'] =$credentialsPath;
 
         return new \Google\Cloud\Firestore\FirestoreClient([
             'projectId'   => env('FIREBASE_PROJECT_ID', 'livestock-express-new-2026'),
@@ -44,7 +44,7 @@ class AdminController extends Controller
 
         if (is_object($value) && method_exists($value, 'get')) {
             try {
-                $value = $value->get();
+                $value =$value->get();
 
                 if ($value instanceof \DateTimeInterface) {
                     return $value->getTimestamp();
@@ -55,10 +55,9 @@ class AdminController extends Controller
         }
 
         if (is_numeric($value)) {
-            $number = (float) $value;
+            $number = (float)$value;
 
-            if ($number > 9999999999) {
-                $number /= 1000;
+            if ($number > 9999999999) {$number /= 1000;
             }
 
             return (int) $number;
@@ -76,24 +75,23 @@ class AdminController extends Controller
     private function getCollectionData(string $collection): array
     {
         try {
-            $database = $this->initFirebase();
-            $documents = $database->collection($collection)->documents();
+            $database = $this->initFirebase();$documents = $database->collection($collection)->documents();
 
             $records = [];
 
-            foreach ($documents as $document) {
+            foreach ($documents as$document) {
                 if (!$document->exists()) {
                     continue;
                 }
 
-                $data = $document->data();
+                $data =$document->data();
 
                 if (!is_array($data)) {
                     continue;
                 }
 
-                $data['id'] = $document->id();
-                $records[] = $data;
+                $data['id'] =$document->id();
+                $records[] =$data;
             }
 
             return $records;
@@ -107,27 +105,21 @@ class AdminController extends Controller
         }
     }
 
-    private function normalizeUser(array $data, string $id): array
+    private function normalizeUser(array $data, string$id): array
     {
         $firstName = trim((string) ($data['firstName'] ?? ''));
         $lastName = trim((string) ($data['lastName'] ?? ''));
         $name = trim((string) ($data['name'] ?? ''));
 
-        if ($name === '') {
-            $name = trim($firstName . ' ' . $lastName);
+        if ($name === '') {$name = trim($firstName . ' ' .$lastName);
         }
 
-        $data['id'] = $id;
-        $data['name'] = $name !== '' ? $name : 'Unnamed User';
-        $data['firstName'] = $firstName;
-        $data['lastName'] = $lastName;
-        $data['email'] = $data['email'] ?? '';
-        $data['phone'] = $data['phone'] ?? '';
-        $data['barangay'] = $data['barangay'] ?? '';
-        $data['city'] = $data['city'] ?? '';
-        $data['idType'] = $data['idType'] ?? '';
-        $data['idFrontUrl'] = $data['idFrontUrl'] ?? $data['idUrl'] ?? null;
-        $data['idBackUrl'] = $data['idBackUrl'] ?? null;
+        $data['id'] =$id;
+        $data['name'] = $name !== '' ?$name : 'Unnamed User';
+        $data['firstName'] =$firstName;
+        $data['lastName'] =$lastName;
+        $data['email'] = $data['email'] ?? '';$data['phone'] = $data['phone'] ?? '';$data['barangay'] = $data['barangay'] ?? '';$data['city'] = $data['city'] ?? '';$data['idType'] = $data['idType'] ?? '';$data['idFrontUrl'] = $data['idFrontUrl'] ?? $data['idUrl'] ?? null;
+        $data['idBackUrl'] =$data['idBackUrl'] ?? null;
         $data['verificationStatus'] = strtolower(
             trim((string) ($data['verificationStatus'] ?? 'pending'))
         );
@@ -135,13 +127,13 @@ class AdminController extends Controller
         return $data;
     }
 
-    private function sortByTimestamp(array &$records, string $field): void
+    private function sortByTimestamp(array &$records, string$field): void
     {
         usort($records, function ($a, $b) use ($field) {
-            $timeA = $this->timestampValue($a[$field] ?? null);
-            $timeB = $this->timestampValue($b[$field] ?? null);
+            $timeA =$this->timestampValue($a[$field] ?? null);
+            $timeB =$this->timestampValue($b[$field] ?? null);
 
-            return $timeB <=> $timeA;
+            return $timeB <=>$timeA;
         });
     }
 
@@ -152,14 +144,12 @@ class AdminController extends Controller
         $totalRevenue = 0;
         $transactionsCount = 0;
         $pendingDeliveriesCount = 0;
-        $recentListings = [];
-        $recentActivities = [];
-        $monthlySales = array_fill(0, 12, 0);
-        $monthlyTransactions = array_fill(0, 12, 0);
+        $recentListings = [];$recentActivities = [];
+        $monthlySales = array_fill(0, 12, 0);$monthlyTransactions = array_fill(0, 12, 0);
 
         try {
-            $usersRaw = $this->getCollectionData('users');
-            foreach ($usersRaw as $user) {
+            $usersRaw =$this->getCollectionData('users');
+            foreach ($usersRaw as$user) {
                 $email = strtolower(trim((string) ($user['email'] ?? '')));
                 $role = strtolower(trim((string) ($user['role'] ?? 'user')));
                 
@@ -168,42 +158,36 @@ class AdminController extends Controller
                 }
             }
 
-            $listingsRaw = $this->getCollectionData('livestock');
+            $listingsRaw =$this->getCollectionData('livestock');
             $totalListings = count($listingsRaw);
             $this->sortByTimestamp($listingsRaw, 'createdAt');
             $recentListings = array_map(fn($item) => (object)$item, array_slice($listingsRaw, 0, 5));
 
-            $ordersRaw = $this->getCollectionData('orders');
+            $ordersRaw =$this->getCollectionData('orders');
             $transactionsCount = count($ordersRaw);
 
-            foreach ($ordersRaw as $order) {
-                $amount = (float) ($order['totalAmount'] ?? $order['amount'] ?? 0);
-                $totalRevenue += $amount;
+            foreach ($ordersRaw as $order) {$amount = (float) ($order['totalAmount'] ?? $order['amount'] ?? 0);
+                $totalRevenue +=$amount;
 
                 $status = strtolower(trim((string) ($order['orderStatus'] ?? $order['status'] ?? '')));
-                if (in_array($status, ['pending', 'pending verification & dispatch', 'dispatched', 'city veterinary inspection approved'], true)) {
-                    $pendingDeliveriesCount++;
+                if (in_array($status, ['pending', 'pending verification & dispatch', 'dispatched', 'city veterinary inspection approved'], true)) {$pendingDeliveriesCount++;
                 }
 
-                $timestamp = $order['createdAt'] ?? null;
-                if ($timestamp) {
-                    $timeVal = $this->timestampValue($timestamp);
+                $timestamp =$order['createdAt'] ?? null;
+                if ($timestamp) {$timeVal = $this->timestampValue($timestamp);
                     if ($timeVal > 0) {
-                        $monthIndex = (int) date('n', $timeVal) - 1;
-                        if ($monthIndex >= 0 && $monthIndex < 12) {
-                            $monthlyTransactions[$monthIndex]++;
-                            $monthlySales[$monthIndex] += $amount;
+                        $monthIndex = (int) date('n',$timeVal) - 1;
+                        if ($monthIndex >= 0 && $monthIndex < 12) {$monthlyTransactions[$monthIndex]++;$monthlySales[$monthIndex] +=$amount;
                         }
                     }
                 }
             }
 
-            $activityLogsRaw = $this->getCollectionData('activity_logs');
+            $activityLogsRaw =$this->getCollectionData('activity_logs');
             $this->sortByTimestamp($activityLogsRaw, 'timestamp');
             $recentActivities = array_map(fn($item) => (object)$item, array_slice($activityLogsRaw, 0, 5));
 
-        } catch (\Throwable $e) {
-            \Illuminate\Support\Facades\Log::error('Dashboard Firebase connection error: ' . $e->getMessage());
+        } catch (\Throwable $e) { \Illuminate\Support\Facades\Log::error('Dashboard Firebase connection error: ' .$e->getMessage());
         }
 
         return view('admin.dashboard', compact(
@@ -221,34 +205,32 @@ class AdminController extends Controller
 
     public function verifications()
     {
-        $users = $this->getCollectionData('users');
+        $users =$this->getCollectionData('users');
 
-        $pendingUsers = [];
-        $verifiedUsers = [];
-        $rejectedUsers = [];   
-        $unverifiedUsers = []; 
+        $pendingUsers = [];$verifiedUsers = [];
+        $rejectedUsers = [];$unverifiedUsers = []; 
 
-        foreach ($users as $user) {
+        foreach ($users as$user) {
             $email = strtolower(trim((string) ($user['email'] ?? '')));
             $role = strtolower(trim((string) ($user['role'] ?? 'user')));
 
-            if ($role === 'admin' || $email === 'veterinaryadminoffice@gmail.com' || $email === 'vetoffice@livestock.com') {
+            if ($role === 'admin' || $email === 'veterinaryadminoffice@gmail.com' \vert{}\vert{} $email === 'vetoffice@livestock.com') {
                 continue;
             }
 
-            $user = $this->normalizeUser($user, $user['id']);
-            $status = $user['verificationStatus'];
+            $user =$this->normalizeUser($user,$user['id']);
+            $status =$user['verificationStatus'];
 
-            $hasSubmittedId = !empty($user['idFrontUrl']) || !empty($user['idUrl']) || (!empty($user['idType']) && $user['idType'] !== 'N/A');
+            $hasSubmittedId = !empty($user['idFrontUrl']) \vert{}\vert{} !empty($user['idUrl']) || (!empty($user['idType']) &&$user['idType'] !== 'N/A');
 
             if ($status === 'verified') {
-                $verifiedUsers[] = (object) $user;
+                $verifiedUsers[] = (object)$user;
             } elseif ($status === 'rejected') {
-                $rejectedUsers[] = (object) $user;
-            } elseif ($status === 'pending' || ($hasSubmittedId && $status !== 'unverified')) {
-                $pendingUsers[] = (object) $user;
+                $rejectedUsers[] = (object)$user;
+            } elseif ($status === 'pending' || ($hasSubmittedId &&$status !== 'unverified')) {
+                $pendingUsers[] = (object)$user;
             } else {
-                $unverifiedUsers[] = (object) $user;
+                $unverifiedUsers[] = (object)$user;
             }
         }
 
@@ -277,29 +259,23 @@ class AdminController extends Controller
 
         // Check if Email or Phone number already exists in Firestore users collection
         try {
-            $database = $this->initFirebase();
-            $usersRef = $database->collection('users')->documents();
+            $database =$this->initFirebase();
+            $usersRef =$database->collection('users')->documents();
 
-            foreach ($usersRef as $doc) {
+            foreach ($usersRef as$doc) {
                 if (!$doc->exists()) continue;
-                $userData = $doc->data();
+                $userData =$doc->data();
                 
                 $existingEmail = strtolower(trim($userData['email'] ?? ''));
                 $existingPhone = trim($userData['phone'] ?? '');
 
-                if ($existingEmail === $email) {
+                if ($existingEmail ===$email) {
                     return response()->json([
                         'message' => 'This email address is already bound to another account.'
                     ], 400);
                 }
 
-                if ($existingPhone !== '' && $existingPhone === $phone) {
-                    return response()->json([
-                        'message' => 'This mobile number is already bound to another account.'
-                    ], 400);
-                }
-            }
-        } catch (\Throwable $e) {
+                if ($existingPhone !== '' &&$existingPhone === $phone) { return response()->json([ 'message' => 'This mobile number is already bound to another account.' ], 400); } } } catch (\Throwable$e) {
             Log::error('Duplicate user check failed: ' . $e->getMessage());
         }
 
@@ -420,11 +396,8 @@ class AdminController extends Controller
             $transactions[] = (object) $order;
             $status = strtolower(trim((string) ($order['orderStatus'] ?? '')));
             
-            if (in_array($status, ['completed', 'delivered'], true)) {
-                $totalRevenue += (float) ($order['totalAmount'] ?? 0);
-                $completedCount++;
-            } elseif (in_array($status, ['pending', 'pending verification & dispatch', 'city veterinary inspection approved', 'dispatched'], true)) {
-                $pendingCount++;
+            if (in_array($status, ['completed', 'delivered'], true)) {$totalRevenue += (float) ($order['totalAmount'] ?? 0);$completedCount++;
+            } elseif (in_array($status, ['pending', 'pending verification & dispatch', 'city veterinary inspection approved', 'dispatched'], true)) {$pendingCount++;
             }
         }
 
@@ -433,21 +406,19 @@ class AdminController extends Controller
 
     public function deliveries()
     {
-        $records = $this->getCollectionData('orders');
-        $deliveries = [];
+        $records = $this->getCollectionData('orders');$deliveries = [];
 
-        foreach ($records as $item) {
-            $item['orderStatus'] = $item['orderStatus'] ?? $item['status'] ?? 'Pending';
-            $deliveries[] = (object) $item;
+        foreach ($records as $item) {$item['orderStatus'] = $item['orderStatus'] ?? $item['status'] ?? 'Pending';
+            $deliveries[] = (object)$item;
         }
 
         $this->sortByTimestamp($records, 'createdAt');
         return view('admin.deliveries', compact('deliveries'));
     }
 
-    public function updateOrderStatus(Request $request, $id)
+    public function updateOrderStatus(Request $request,$id)
     {
-        $validated = $request->validate([
+        $validated =$request->validate([
             'orderStatus' => [
                 'required',
                 'string',
@@ -456,87 +427,75 @@ class AdminController extends Controller
             ],
         ]);
 
-        $status = $validated['orderStatus'];
-        $database = $this->initFirebase();
+        $status =$validated['orderStatus'];
+        $database =$this->initFirebase();
         $database->collection('orders')->document($id)->update([
             ['path' => 'orderStatus', 'value' => $status],
         ]);
 
-        $this->logAdminAction($id, 'Updated Order/Delivery Status', $status);
+        $this->logAdminAction($id, 'Updated Order/Delivery Status',$status);
         return redirect()->back()->with('success', 'Delivery and order status updated successfully.');
     }
 
     public function payments()
     {
-        $records = $this->getCollectionData('orders');
+        $records =$this->getCollectionData('orders');
         $this->sortByTimestamp($records, 'createdAt');
-        $payments = array_map(fn ($item) => (object) $item, $records);
+        $payments = array_map(fn ($item) => (object) $item,$records);
         return view('admin.payments', compact('payments'));
     }
 
     public function activityLogs(Request $request)
     {
-        $allLogs = $this->getCollectionData('activity_logs');
-        $userRecords = $this->getCollectionData('users');
+        $allLogs =$this->getCollectionData('activity_logs');
+        $userRecords =$this->getCollectionData('users');
 
-        $usersById = [];
-        $usersByEmail = [];
+        $usersById = [];$usersByEmail = [];
 
-        foreach ($userRecords as $userRecord) {
+        foreach ($userRecords as$userRecord) {
             $documentId = trim((string) ($userRecord['id'] ?? ''));
             $email = strtolower(trim((string) ($userRecord['email'] ?? '')));
 
-            if ($documentId !== '') $usersById[$documentId] = $userRecord;
-            if ($email !== '') $usersByEmail[$email] = $userRecord;
+            if ($documentId !== '')$usersById[$documentId] =$userRecord;
+            if ($email !== '')$usersByEmail[$email] =$userRecord;
         }
 
-        foreach ($allLogs as &$log) {
-            $action = trim((string) ($log['action'] ?? 'Activity recorded'));
-            $actorType = strtolower(trim((string) ($log['actorType'] ?? $log['actor_type'] ?? '')));
+        foreach ($allLogs as &$log) {$action = trim((string) ($log['action'] ?? 'Activity recorded'));$actorType = strtolower(trim((string) ($log['actorType'] ?? $log['actor_type'] ?? '')));
             $isAdminActivity = ($actorType === 'admin' || !empty($log['admin_name']) || isset($log['admin_email']));
 
-            if ($isAdminActivity) {
-                $log['actorType'] = 'admin';
-                $log['admin_name'] = trim((string) ($log['admin_name'] ?? $log['actor_name'] ?? 'City Veterinary Office'));
-                $log['admin_email'] = trim((string) ($log['admin_email'] ?? $log['actor_email'] ?? 'vetoffice@livestock.com'));
+            if ($isAdminActivity) {$log['actorType'] = 'admin';
+                $log['admin_name'] = trim((string) ($log['admin_name'] ?? $log['actor_name'] ?? 'City Veterinary Office'));$log['admin_email'] = trim((string) ($log['admin_email'] ?? $log['actor_email'] ?? 'vetoffice@livestock.com'));
             } else {
                 $log['actorType'] = 'user';
-                $userId = trim((string) ($log['user_id'] ?? $log['userId'] ?? ''));
-                $userEmail = strtolower(trim((string) ($log['user_email'] ?? $log['email'] ?? '')));
+                $userId = trim((string) ($log['user_id'] ?? $log['userId'] ?? ''));$userEmail = strtolower(trim((string) ($log['user_email'] ?? $log['email'] ?? '')));
 
                 $matchedUser = [];
-                if ($userId !== '' && isset($usersById[$userId])) {
-                    $matchedUser = $usersById[$userId];
-                } elseif ($userEmail !== '' && isset($usersByEmail[$userEmail])) {
-                    $matchedUser = $usersByEmail[$userEmail];
+                if ($userId !== '' && isset($usersById[$userId])) {$matchedUser = $usersById[$userId];
+                } elseif ($userEmail !== '' && isset($usersByEmail[$userEmail])) {$matchedUser = $usersByEmail[$userEmail];
                 }
 
                 $resolvedName = trim((string) ($matchedUser['name'] ?? ''));
-                if ($resolvedName === '' && !empty($matchedUser['firstName'])) {
-                    $resolvedName = trim($matchedUser['firstName'] . ' ' . ($matchedUser['lastName'] ?? ''));
+                if ($resolvedName === '' && !empty($matchedUser['firstName'])) {$resolvedName = trim($matchedUser['firstName'] . ' ' . ($matchedUser['lastName'] ?? ''));
                 }
 
-                $log['user_name'] = trim((string) ($resolvedName !== '' ? $resolvedName : ($log['user_name'] ?? $log['name'] ?? 'Registered User')));
+                $log['user_name'] = trim((string) ($resolvedName !== '' ?$resolvedName : ($log['user_name'] ?? $log['name'] ?? 'Registered User')));
             }
 
-            $targetId = trim((string) ($log['target_user_id'] ?? ''));
-            $log['target_display_id'] = $targetId !== '' ? '#' . (strlen($targetId) > 12 ? substr($targetId, 0, 12) . '...' : $targetId) : null;
-            $log['action'] = $action !== '' ? $action : 'Activity recorded';
+            $targetId = trim((string) ($log['target_user_id'] ?? ''));$log['target_display_id'] = $targetId !== '' ? '#' . (strlen($targetId) > 12 ? substr($targetId, 0, 12) . '...' :$targetId) : null;
+            $log['action'] = $action !== '' ?$action : 'Activity recorded';
         }
         unset($log);
 
         $this->sortByTimestamp($allLogs, 'timestamp');
 
         $perPage = 10;
-        $currentPage = Paginator::resolveCurrentPage('page');
-        $currentItems = array_slice($allLogs, ($currentPage - 1) * $perPage, $perPage);
+        $currentPage = Paginator::resolveCurrentPage('page');$currentItems = array_slice($allLogs, ($currentPage - 1) * $perPage,$perPage);
 
         $activityLogs = new LengthAwarePaginator(
-            array_map(fn ($item) => (object) $item, $currentItems),
+            array_map(fn ($item) => (object) $item,$currentItems),
             count($allLogs),
-            $perPage,
-            $currentPage,
-            ['path' => $request->url(), 'query' => $request->query()]
+            $perPage,$currentPage,
+            ['path' => $request->url(), 'query' =>$request->query()]
         );
 
         return view('admin.logs', compact('activityLogs'));
@@ -544,15 +503,15 @@ class AdminController extends Controller
 
     public function supportTickets()
     {
-        $tickets = $this->getCollectionData('support_tickets');
+        $tickets =$this->getCollectionData('support_tickets');
         $this->sortByTimestamp($tickets, 'createdAt');
-        $tickets = array_map(fn ($item) => (object) $item, $tickets);
+        $tickets = array_map(fn ($item) => (object) $item,$tickets);
         return view('admin.support', compact('tickets'));
     }
 
     public function resolveSupportTicket($id)
     {
-        $database = $this->initFirebase();
+        $database =$this->initFirebase();
         $database->collection('support_tickets')->document($id)->update([
             ['path' => 'status', 'value' => 'Resolved'],
         ]);
@@ -561,23 +520,23 @@ class AdminController extends Controller
         return redirect()->back()->with('success', 'Support ticket marked as resolved successfully.');
     }
 
-    public function updateStatus(Request $request, $id)
+    public function updateStatus(Request $request,$id)
     {
-        $validated = $request->validate([
+        $validated =$request->validate([
             'status' => ['required', 'in:pending,verified,rejected,unverified'],
         ]);
 
-        $status = $validated['status'];
-        $database = $this->initFirebase();
+        $status =$validated['status'];
+        $database =$this->initFirebase();
         $database->collection('users')->document($id)->update([
             ['path' => 'verificationStatus', 'value' => $status],
         ]);
 
-        $action = $status === 'verified'
+        $action =$status === 'verified'
             ? 'Approved Seller Verification'
-            : ($status === 'rejected' || $status === 'unverified' ? 'Rejected/Revoked Seller Verification' : 'Reset Seller Verification');
+            : ($status === 'rejected' ||$status === 'unverified' ? 'Rejected/Revoked Seller Verification' : 'Reset Seller Verification');
 
-        $this->logAdminAction($id, $action, $status);
+        $this->logAdminAction($id, $action,$status);
         return redirect()->back()->with('success', 'User verification status updated successfully.');
     }
 
@@ -602,8 +561,8 @@ class AdminController extends Controller
             ]);
         }
 
-        $admin->name = $request->input('name');
-        $admin->email = $request->input('email');
+        $admin->name =$request->input('name');
+        $admin->email =$request->input('email');
 
         if ($request->filled('password')) {
             $admin->password = Hash::make($request->input('password'));
@@ -613,11 +572,10 @@ class AdminController extends Controller
         return redirect()->back()->with('success', 'Admin profile settings updated successfully.');
     }
 
-    private function logAdminAction(string $targetId, string $actionType, string $statusValue): void
+    private function logAdminAction(string $targetId, string $actionType, string$statusValue): void
     {
         try {
-            $database = $this->initFirebase();
-            $admin = auth()->user();
+            $database = $this->initFirebase();$admin = auth()->user();
 
             $adminName = $admin ? ($admin->name ?? 'City Veterinary Office') : 'City Veterinary Office';
             $adminEmail = $admin ? ($admin->email ?? 'vetoffice@livestock.com') : 'vetoffice@livestock.com';
