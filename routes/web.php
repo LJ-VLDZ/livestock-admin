@@ -100,6 +100,9 @@ Route::middleware(['auth'])->group(function () {
         ->name('admin.support');
 
     Route::post('/admin/support/{id}/resolve', [AdminController::class, 'resolveSupportTicket'])
-        ->name('admin.support.resolve');   
+        ->name('admin.support.resolve');
+    
+    Route::get('/verify-registration', [AuthController::class, 'verifyRegistration'])
+        ->name('verify.registration');
 
 });
