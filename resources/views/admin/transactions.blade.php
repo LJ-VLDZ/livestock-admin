@@ -33,25 +33,6 @@
     {{-- Summary Cards --}}
     @php
         $transactionCollection = collect($transactions ?? []);
-
-        $completedCount = $transactionCollection->filter(function ($txn) {
-            $status = strtolower(trim((string) ($txn->orderStatus ?? '')));
-            return in_array($status, ['completed', 'delivered', 'paid'], true);
-        })->count();
-
-        $ongoingCount = $transactionCollection->filter(function ($txn) {
-            $status = strtolower(trim((string) ($txn->orderStatus ?? '')));
-            return in_array($status, [
-                'pending verification & dispatch', 
-                'city veterinary inspection approved', 
-                'dispatched', 
-                'pending'
-            ], true);
-        })->count();
-
-        $totalValue = $transactionCollection->sum(function ($txn) {
-            return (float) ($txn->totalAmount ?? 0);
-        });
     @endphp
 
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -77,8 +58,8 @@
                     </svg>
                 </span>
             </div>
-            <p class="mt-3 text-3xl font-extrabold text-slate-900">{{ $completedCount }}</p>
-            <p class="mt-1 text-xs text-slate-400">Completed, delivered, or paid</p>
+            <p class="mt-3 text-3xl font-extrabold text-slate-900">{{ $completedCount ?? 0 }}</p>
+            <p class="mt-1 text-xs text-slate-400">Completed or delivered sales</p>
         </div>
 
         <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -90,21 +71,21 @@
                     </svg>
                 </span>
             </div>
-            <p class="mt-3 text-3xl font-extrabold text-slate-900">{{ $ongoingCount }}</p>
+            <p class="mt-3 text-3xl font-extrabold text-slate-900">{{ $pendingCount ?? 0 }}</p>
             <p class="mt-1 text-xs text-slate-400">Pending or in progress</p>
         </div>
 
         <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div class="flex items-center justify-between">
-                <p class="text-sm font-semibold text-slate-500">Recorded value</p>
+                <p class="text-sm font-semibold text-slate-500">Recorded revenue</p>
                 <span class="flex h-10 w-10 items-center justify-center rounded-xl bg-green-50 text-[#0F5132]">
                     <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 8c-2 0-3 .9-3 2s1 2 3 2 3 1 3 2-1 2-3 2m0-10V6m0 12v-2m9-4a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
                 </span>
             </div>
-            <p class="mt-3 break-words text-2xl font-extrabold text-slate-900">₱{{ number_format($totalValue, 2) }}</p>
-            <p class="mt-1 text-xs text-slate-400">Sum of displayed transaction amounts</p>
+            <p class="mt-3 break-words text-2xl font-extrabold text-slate-900">₱{{ number_format((float) ($totalRevenue ?? 0), 2) }}</p>
+            <p class="mt-1 text-xs text-slate-400">Total completed sales revenue</p>
         </div>
     </div>
 
@@ -115,12 +96,23 @@
                 <h3 class="text-lg font-extrabold text-slate-900">All transactions</h3>
                 <p class="mt-1 text-sm text-slate-500">Transaction references, participants, amounts, and statuses.</p>
             </div>
-            <span class="inline-flex w-fit items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 6h16M4 12h16M4 18h16"/>
-                </svg>
-                {{ $transactionCollection->count() }} records
-            </span>
+            
+            <div class="flex flex-wrap items-center gap-3">
+                <span class="inline-flex w-fit items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-slate-600">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 6h16M4 12h16M4 18h16"/>
+                    </svg>
+                    {{ $transactionCollection->count() }} records
+                </span>
+
+                {{-- Export PDF Report Button --}}
+                <a href="{{ route('admin.transactions.export') }}" target="_blank" class="inline-flex items-center gap-2 rounded-xl bg-[#0F5132] px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-[#0A3622]">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    Export Report (PDF)
+                </a>
+            </div>
         </div>
 
         @if($transactionCollection->isEmpty())
@@ -150,12 +142,12 @@
                     <tbody class="divide-y divide-slate-100">
                         @foreach($transactionCollection as $txn)
                             @php
-                                $transactionStatus = trim((string) ($txn->orderStatus ?? 'Unknown'));
+                                $transactionStatus = trim((string) ($txn->orderStatus ?? $txn->status ?? 'Unknown'));
                                 $normalizedStatus = strtolower($transactionStatus);
 
                                 $statusClasses = match (true) {
                                     in_array($normalizedStatus, ['completed', 'delivered', 'paid']) => 'border-emerald-200 bg-emerald-50 text-emerald-800',
-                                    in_array($normalizedStatus, ['pending verification & dispatch', 'city veterinary inspection approved', 'dispatched', 'pending']) => 'border-amber-200 bg-amber-50 text-amber-800',
+                                    in_array($normalizedStatus, ['pending verification & dispatch', 'city veterinary inspection approved', 'dispatched', 'pending', 'pending online inspection review']) => 'border-amber-200 bg-amber-50 text-amber-800',
                                     in_array($normalizedStatus, ['cancelled by buyer', 'cancelled', 'canceled', 'rejected', 'failed']) => 'border-rose-200 bg-rose-50 text-rose-800',
                                     default => 'border-slate-200 bg-slate-50 text-slate-700',
                                 };
@@ -163,7 +155,7 @@
 
                             <tr class="transition hover:bg-emerald-50/30">
                                 <td class="px-6 py-4">
-                                    <p class="font-mono text-sm font-bold text-slate-800">#{{ substr($txn->id ?? 'UNKNOWN', 0, 8) }}</p>
+                                    <p class="font-mono text-sm font-bold text-slate-800">#{{ substr($txn->id ?? ($txn->orderId ?? 'UNKNOWN'), 0, 8) }}</p>
                                     <p class="mt-1 text-xs font-semibold text-slate-600">{{ $txn->livestockName ?? 'Livestock Item' }}</p>
                                 </td>
 
@@ -176,7 +168,7 @@
 
                                 <td class="whitespace-nowrap px-5 py-4">
                                     <p class="font-extrabold text-[#0F5132]">
-                                        ₱{{ number_format((float) ($txn->totalAmount ?? 0), 2) }}
+                                        ₱{{ number_format((float) ($txn->totalAmount ?? $txn->amount ?? 0), 2) }}
                                     </p>
                                     <p class="mt-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                                         {{ $txn->paymentMethod ?? 'COD' }}
@@ -194,7 +186,6 @@
                                     @if(!empty($txn->createdAt))
                                         @php
                                             try {
-                                                // Safely parse Firestore timestamp or ISO string to PHT
                                                 $transactionDate = $txn->createdAt instanceof \DateTimeInterface
                                                     ? \Illuminate\Support\Carbon::instance($txn->createdAt)->setTimezone('Asia/Manila')
                                                     : \Illuminate\Support\Carbon::parse($txn->createdAt)->setTimezone('Asia/Manila');
@@ -217,7 +208,7 @@
     </div>
 
     <p class="px-1 text-xs leading-5 text-slate-400">
-        Summary totals are based on the transactions supplied to this page. Confirm that your stored status values match the categories above.
+        Summary totals are based on marketplace transactions and fulfilled order records.
     </p>
 </div>
 @endsection

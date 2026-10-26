@@ -1,6 +1,4 @@
-
 <?php
-
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\AuthController;
@@ -20,6 +18,14 @@ Route::post('/login', [AuthController::class, 'login'])
 Route::post('/logout', [AuthController::class, 'logout'])
     ->middleware('auth')
     ->name('logout');
+
+/*
+|--------------------------------------------------------------------------
+| Public User Verification Route (Must be outside auth middleware!)
+|--------------------------------------------------------------------------
+*/
+Route::get('/verify-registration', [AuthController::class, 'verifyRegistration'])
+    ->name('verify.registration');
 
 
 /*
@@ -67,9 +73,12 @@ Route::middleware(['auth'])->group(function () {
         ->name('admin.deleteListing');
 
 
-    // Transactions
+    // Transactions & CSV Export
     Route::get('/admin/transactions', [AdminController::class, 'transactions'])
         ->name('admin.transactions');
+
+    Route::get('/admin/transactions/export-pdf', [AdminController::class, 'exportPdf'])
+        ->name('admin.transactions.export');
 
 
     // Deliveries
@@ -101,8 +110,5 @@ Route::middleware(['auth'])->group(function () {
 
     Route::post('/admin/support/{id}/resolve', [AdminController::class, 'resolveSupportTicket'])
         ->name('admin.support.resolve');
-    
-    Route::get('/verify-registration', [AuthController::class, 'verifyRegistration'])
-        ->name('verify.registration');
 
 });

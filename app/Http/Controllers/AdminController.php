@@ -178,7 +178,7 @@ class AdminController extends Controller
                 $totalRevenue += $amount;
 
                 $status = strtolower(trim((string) ($order['orderStatus'] ?? $order['status'] ?? '')));
-                if (in_array($status, ['pending', 'pending verification & dispatch', 'dispatched', 'city veterinary inspection approved'], true)) {
+                if (in_array($status, ['pending', 'pending verification & dispatch', 'dispatched', 'city veterinary inspection approved', 'pending online inspection review'], true)) {
                     $pendingDeliveriesCount++;
                 }
 
@@ -314,26 +314,87 @@ class AdminController extends Controller
     public function transactions()
     {
         $ordersRaw = $this->getCollectionData('orders');
-        $this->sortByTimestamp($ordersRaw, 'createdAt');
+        $transactionsRaw = $this->getCollectionData('transactions');
 
-        $transactions = [];
+        $combinedTransactions = [];
+        $orderLookup = [];
+
+        foreach ($ordersRaw as $order) {
+            $orderLookup[$order['id']] = $order;
+            $combinedTransactions[] = $order;
+        }
+
+        foreach ($transactionsRaw as $txn) {
+            $orderId = $txn['orderId'] ?? null;
+            if ($orderId && isset($orderLookup[$orderId])) {
+                $txn = array_merge($orderLookup[$orderId], $txn);
+            }
+            $combinedTransactions[] = $txn;
+        }
+
+        $uniqueTransactions = [];
+        foreach ($combinedTransactions as $item) {
+            $identifier = $item['id'] ?? ($item['orderId'] ?? uniqid());
+            $uniqueTransactions[$identifier] = $item;
+        }
+
+        $transactionsList = array_values($uniqueTransactions);
+        $this->sortByTimestamp($transactionsList, 'createdAt');
+
+        $transactions = array_map(fn($item) => (object) $item, $transactionsList);
+        
         $totalRevenue = 0;
         $completedCount = 0;
         $pendingCount = 0;
 
-        foreach ($ordersRaw as $order) {
-            $transactions[] = (object) $order;
-            $status = strtolower(trim((string) ($order['orderStatus'] ?? '')));
-            
-            if (in_array($status, ['completed', 'delivered'], true)) {
-                $totalRevenue += (float) ($order['totalAmount'] ?? 0);
+        foreach ($transactionsList as $txn) {
+            $status = strtolower(trim((string) ($txn['orderStatus'] ?? $txn['status'] ?? '')));
+            $amount = (float) ($txn['totalAmount'] ?? $txn['amount'] ?? 0);
+
+            if (in_array($status, ['completed', 'delivered', 'paid'], true)) {
+                $totalRevenue += $amount;
                 $completedCount++;
-            } elseif (in_array($status, ['pending', 'pending verification & dispatch', 'city veterinary inspection approved', 'dispatched'], true)) {
+            } elseif (in_array($status, ['pending', 'pending verification & dispatch', 'city veterinary inspection approved', 'dispatched', 'pending online inspection review'], true)) {
                 $pendingCount++;
             }
         }
 
         return view('admin.transactions', compact('transactions', 'totalRevenue', 'completedCount', 'pendingCount'));
+    }
+
+    // Export Transactions as a Printable PDF Report
+    public function exportPdf()
+    {
+        $ordersRaw = $this->getCollectionData('orders');
+        $transactionsRaw = $this->getCollectionData('transactions');
+
+        $combined = [];
+        $orderMap = [];
+        foreach ($ordersRaw as $order) {
+            $orderMap[$order['id']] = $order;
+            $combined[] = $order;
+        }
+        foreach ($transactionsRaw as $txn) {
+            $orderId = $txn['orderId'] ?? null;
+            if ($orderId && isset($orderMap[$orderId])) {
+                $txn = array_merge($orderMap[$orderId], $txn);
+            }
+            $combined[] = $txn;
+        }
+
+        $totalRevenue = 0;
+        foreach ($combined as $item) {
+            $status = strtolower(trim((string) ($item['orderStatus'] ?? $item['status'] ?? '')));
+            if (in_array($status, ['completed', 'delivered', 'paid'], true)) {
+                $totalRevenue += (float) ($item['totalAmount'] ?? $item['amount'] ?? 0);
+            }
+        }
+
+        return view('admin.transactions_pdf', [
+            'transactions' => $combined,
+            'totalRevenue' => $totalRevenue,
+            'generatedAt' => now()->setTimezone('Asia/Manila')->format('F d, Y h:i A')
+        ]);
     }
 
     public function deliveries()
@@ -356,8 +417,7 @@ class AdminController extends Controller
             'orderStatus' => [
                 'required',
                 'string',
-                'max:100',
-                'in:Pending,Pending Verification & Dispatch,City Veterinary Inspection Approved,Dispatched,Delivered,Completed,Cancelled',
+                'max:150',
             ],
         ]);
 
