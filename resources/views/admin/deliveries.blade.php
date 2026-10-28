@@ -69,7 +69,7 @@
                 <p class="text-sm text-slate-500">Live GPS markers streaming directly from active seller dispatches.</p>
             </div>
             <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 ring-1 ring-inset ring-emerald-600/20">
-                <span class="h-2 w-2 rounded-full bg-emerald-600 animate-pulse"></span> Firestore Radar Online
+                <span class="h-2 w-2 rounded-full bg-emerald-600 animate-pulse"></span> Admin Radar Online
             </span>
         </div>
         <div id="adminAlaminosMap" class="h-[450px] w-full rounded-xl border border-slate-200 shadow-inner"></div>
