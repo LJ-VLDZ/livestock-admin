@@ -1,6 +1,6 @@
 FROM php:8.2-apache
 
-# Install system dependencies, PHP extensions, and required dev tools for PECL
+# Install system dependencies and build tools
 RUN apt-get update && apt-get install -y \
     git \
     unzip \
@@ -10,10 +10,12 @@ RUN apt-get update && apt-get install -y \
     libonig-dev \
     libssl-dev \
     pkg-config \
+    build-essential \
     && docker-php-ext-install pdo pdo_mysql zip gd
 
-# Install gRPC extension required by Firebase/Firestore
-RUN pecl install grpc && docker-php-ext-enable grpc
+# Install gRPC quietly to prevent Cloud Shell CLI stream crashes
+RUN pecl install -o -f grpc \
+    && docker-php-ext-enable grpc
 
 RUN a2enmod rewrite
 
