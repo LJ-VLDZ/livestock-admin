@@ -1,5 +1,6 @@
 FROM php:8.2-apache
 
+# Install system dependencies, PHP extensions, and required dev tools for PECL
 RUN apt-get update && apt-get install -y \
     git \
     unzip \
@@ -7,7 +8,12 @@ RUN apt-get update && apt-get install -y \
     libzip-dev \
     libpng-dev \
     libonig-dev \
+    libssl-dev \
+    pkg-config \
     && docker-php-ext-install pdo pdo_mysql zip gd
+
+# Install gRPC extension required by Firebase/Firestore
+RUN pecl install grpc && docker-php-ext-enable grpc
 
 RUN a2enmod rewrite
 
@@ -20,8 +26,6 @@ RUN sed -ri -s 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf
 WORKDIR /var/www/html
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-
-# --- ADDED --no-scripts HERE TO PREVENT BUILD CRASHES ---
 RUN composer install --no-dev --optimize-autoloader --no-scripts
 
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
