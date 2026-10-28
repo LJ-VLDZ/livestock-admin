@@ -1,6 +1,5 @@
 FROM php:8.2-apache
 
-# Install system dependencies and PHP extensions required by Laravel/Filament
 RUN apt-get update && apt-get install -y \
     git \
     unzip \
@@ -10,30 +9,23 @@ RUN apt-get update && apt-get install -y \
     libonig-dev \
     && docker-php-ext-install pdo pdo_mysql zip gd
 
-# Enable Apache Rewrite Module
 RUN a2enmod rewrite
 
-# Copy project files into the container
 COPY . /var/www/html
 
-# Point Apache document root to Laravel's public folder
 ENV APACHE_DOCUMENT_ROOT /var/www/html/public
 RUN sed -ri -s 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
 RUN sed -ri -s 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf
 
-# Set working directory
 WORKDIR /var/www/html
 
-# Install Composer dependency manager
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Install PHP dependencies without dev packages for production speed
-RUN composer install --no-dev --optimize-autoloader
+# --- ADDED --no-scripts HERE TO PREVENT BUILD CRASHES ---
+RUN composer install --no-dev --optimize-autoloader --no-scripts
 
-# Set correct permissions for Laravel storage and cache
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 
-# Cloud Run dynamically assigns the port, so configure Apache to listen on port 8080
 RUN sed -i 's/80/8080/g' /etc/apache2/ports.conf /etc/apache2/sites-available/000-default.conf
 
 EXPOSE 8080
