@@ -7,7 +7,6 @@
 @section('content')
 @php
     $pendingCollection = collect($pendingUsers ?? [])->filter(function($user) {
-        // Only include users who have actually submitted ID images or a valid ID type
         return !empty($user->idFrontUrl) || !empty($user->idUrl) || (!empty($user->idType) && $user->idType !== 'N/A' && $user->idType !== '');
     });
     $verifiedCollection = collect($verifiedUsers ?? []);
@@ -17,7 +16,6 @@
 
 <div class="max-w-7xl mx-auto space-y-7 pb-12">
 
-    {{-- Success message --}}
     @if(session('success'))
         <div class="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-emerald-800 shadow-sm">
             <svg class="mt-0.5 h-5 w-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -162,13 +160,13 @@
                                 </button>
                             </form>
 
-                            <form action="{{ route('admin.update', $user->id) }}" method="POST" onsubmit="return confirm('Reject this verification application?');">
-                                @csrf
-                                <input type="hidden" name="status" value="rejected">
-                                <button type="submit" class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100">
-                                    Reject
-                                </button>
-                            </form>
+                            {{-- Trigger Rejection Reason Modal --}}
+                            <button
+                                type="button"
+                                onclick="openRejectionModal('{{ route('admin.update', $user->id) }}', 'user')"
+                                class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100">
+                                Reject
+                            </button>
                         </div>
                     </div>
                 @endforeach
@@ -214,6 +212,11 @@
                                 </span>
                             </div>
                             <p class="mt-1 break-all text-xs text-slate-500">{{ $rUser->email ?? 'No email provided' }}</p>
+                            @if(!empty($rUser->rejectionReason))
+                                <p class="mt-2 text-xs font-medium text-rose-600 bg-rose-50 p-2 rounded-lg border border-rose-100">
+                                    <strong>Reason:</strong> {{ $rUser->rejectionReason }}
+                                </p>
+                            @endif
                         </div>
                     </div>
 
@@ -322,13 +325,13 @@
                                             Manage
                                         </button>
 
-                                        <form action="{{ route('admin.update', $vUser->id) }}" method="POST" onsubmit="return confirm('Revoke verification status for this user?');">
-                                            @csrf
-                                            <input type="hidden" name="status" value="unverified">
-                                            <button type="submit" class="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100">
-                                                Revoke Access
-                                            </button>
-                                        </form>
+                                        {{-- Trigger Revocation/Rejection Reason Modal --}}
+                                        <button
+                                            type="button"
+                                            onclick="openRejectionModal('{{ route('admin.update', $vUser->id) }}', 'user_revoke')"
+                                            class="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-bold text-rose-700 transition hover:bg-rose-100">
+                                            Revoke Access
+                                        </button>
                                     </div>
                                 </td>
                             </tr>
@@ -392,6 +395,45 @@
             </div>
         @endif
     </section>
+</div>
+
+{{-- Rejection Reason Modal --}}
+<div id="rejectionModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+    <div class="w-full max-w-lg rounded-3xl bg-white shadow-2xl overflow-hidden">
+        <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-slate-50">
+            <h3 class="text-base font-extrabold text-slate-900">Provide Rejection / Revocation Reason</h3>
+            <button type="button" onclick="closeRejectionModal()" class="rounded-xl p-2 text-slate-400 hover:bg-slate-200">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+            </button>
+        </div>
+        
+        <form id="rejectionForm" method="POST" class="p-6 space-y-4">
+            @csrf
+            <input type="hidden" name="status" id="rejectionStatusInput" value="rejected">
+            
+            <p class="text-xs text-slate-500">Select a common automated reason or type a custom note to notify the user:</p>
+            
+            <div id="presetReasonsContainer" class="space-y-2">
+                <!-- Dynamically populated presets -->
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Custom Reason / Additional Notes</label>
+                <textarea name="rejectionReason" id="customReasonText" rows="3" class="w-full rounded-xl border border-slate-200 p-3 text-sm focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100 outline-none" placeholder="Type a specific message for the user..."></textarea>
+            </div>
+
+            <div class="flex justify-end gap-3 pt-2">
+                <button type="button" onclick="closeRejectionModal()" class="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-bold text-slate-700 hover:bg-slate-50">
+                    Cancel
+                </button>
+                <button type="submit" class="rounded-xl bg-rose-600 px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-rose-700">
+                    Confirm & Send Notification
+                </button>
+            </div>
+        </form>
+    </div>
 </div>
 
 {{-- User details modal --}}
@@ -484,13 +526,9 @@
             </button>
 
             <div id="modalActions" class="flex flex-col gap-2 sm:flex-row">
-                <form id="modalRejectForm" action="" method="POST" onsubmit="return confirm('Revoke verification status for this user?');">
-                    @csrf
-                    <input type="hidden" name="status" value="unverified">
-                    <button type="submit" class="w-full rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-700 transition hover:bg-rose-100">
-                        Revoke Verification
-                    </button>
-                </form>
+                <button type="button" id="modalRevokeBtn" onclick="" class="w-full rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-700 transition hover:bg-rose-100">
+                    Revoke Verification
+                </button>
                 <form id="modalApproveForm" action="" method="POST" onsubmit="return confirm('Approve this user verification?');">
                     @csrf
                     <input type="hidden" name="status" value="verified">
@@ -506,74 +544,83 @@
 
 @push('scripts')
 <script>
+    function openRejectionModal(actionUrl, mode) {
+        const form = document.getElementById('rejectionForm');
+        form.action = actionUrl;
+        
+        const statusInput = document.getElementById('rejectionStatusInput');
+        statusInput.value = (mode === 'user_revoke') ? 'unverified' : 'rejected';
+
+        const container = document.getElementById('presetReasonsContainer');
+        container.innerHTML = '';
+
+        let reasons = [];
+        if (mode === 'user' || mode === 'user_revoke') {
+            reasons = [
+                "Government ID or verification document is unreadable/blurry.",
+                "Name on submitted ID does not match the account profile name.",
+                "Expired, invalid, or unsupported barangay clearance / ID type.",
+                "Facial verification selfie does not match the uploaded ID photo."
+            ];
+        }
+
+        reasons.forEach((reason, index) => {
+            const label = document.createElement('label');
+            label.className = "flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-emerald-50/30 cursor-pointer transition";
+            label.innerHTML = `
+                <input type="radio" name="presetReason" value="${reason}" ${index === 0 ? 'checked' : ''} class="mt-0.5 text-emerald-600 focus:ring-emerald-500" onclick="document.getElementById('customReasonText').value = this.value">
+                <span class="text-xs font-semibold text-slate-700">${reason}</span>
+            `;
+            container.appendChild(label);
+        });
+
+        if (reasons.length > 0) {
+            document.getElementById('customReasonText').value = reasons[0];
+        }
+
+        document.getElementById('rejectionModal').classList.remove('hidden');
+        document.getElementById('rejectionModal').classList.add('flex');
+    }
+
+    function closeRejectionModal() {
+        document.getElementById('rejectionModal').classList.add('hidden');
+        document.getElementById('rejectionModal').classList.remove('flex');
+    }
+
     function openUserModal(button) {
         let user;
-
         try {
             user = JSON.parse(button.dataset.user);
         } catch (error) {
             console.error('Unable to read user details.', error);
-            alert('Unable to open user details. Please refresh the page and try again.');
             return;
         }
 
-        const setText = (id, value) => {
-            document.getElementById(id).textContent = value || 'N/A';
-        };
-
-        setText('modalName', user.name);
-        setText('modalEmail', user.email);
-        setText('modalPhone', user.phone);
-        setText('modalIdType', user.idType);
-        setText('modalLocation', [user.barangay, user.city].filter(Boolean).join(', '));
+        document.getElementById('modalName').textContent = user.name || 'N/A';
+        document.getElementById('modalEmail').textContent = user.email || 'N/A';
+        document.getElementById('modalPhone').textContent = user.phone || 'N/A';
+        document.getElementById('modalIdType').textContent = user.idType || 'N/A';
+        document.getElementById('modalLocation').textContent = [user.barangay, user.city].filter(Boolean).join(', ') || 'N/A';
 
         const statusElement = document.getElementById('modalStatus');
         const isVerified = user.status === 'verified';
-
         statusElement.textContent = isVerified ? 'Verified Account' : 'Pending Verification';
         statusElement.className = isVerified
             ? 'rounded-full border border-emerald-200 bg-emerald-400/20 px-3 py-1.5 text-xs font-bold text-emerald-50'
             : 'rounded-full border border-amber-200 bg-amber-400/20 px-3 py-1.5 text-xs font-bold text-amber-50';
 
-        const setImage = (prefix, url) => {
-            const image = document.getElementById('modal' + prefix + 'Img');
-            const link = document.getElementById('modal' + prefix + 'Link');
-            const emptyText = document.getElementById('modalNo' + prefix + 'Text');
-
-            image.onerror = () => {
-                image.removeAttribute('src');
-                link.classList.add('hidden');
-                emptyText.textContent = 'Unable to load image.';
-                emptyText.classList.remove('hidden');
-            };
-
-            if (url && url.trim() !== '') {
-                emptyText.textContent = 'No ' + prefix.toLowerCase() + ' available';
-                image.src = url;
-                link.href = url;
-                link.classList.remove('hidden');
-                emptyText.classList.add('hidden');
-            } else {
-                image.removeAttribute('src');
-                link.removeAttribute('href');
-                link.classList.add('hidden');
-                emptyText.textContent = 'No ' + prefix.toLowerCase() + ' available';
-                emptyText.classList.remove('hidden');
-            }
-        };
-
-        setImage('Front', user.front);
-        setImage('Back', user.back);
-        setImage('Face', user.face); // Handles facial verification selfie preview
-
         const updateRouteBase = @json(url('/admin/verifications'));
         const actionUrl = updateRouteBase + '/' + encodeURIComponent(user.id);
 
         document.getElementById('modalApproveForm').action = actionUrl;
-        document.getElementById('modalRejectForm').action = actionUrl;
-
         document.getElementById('modalApproveForm').classList.toggle('hidden', isVerified);
-        document.getElementById('modalRejectForm').classList.toggle('hidden', !isVerified);
+        
+        const revokeBtn = document.getElementById('modalRevokeBtn');
+        revokeBtn.onclick = () => {
+            closeUserModal();
+            openRejectionModal(actionUrl, 'user_revoke');
+        };
+        revokeBtn.classList.toggle('hidden', !isVerified);
 
         const modal = document.getElementById('detailsModal');
         modal.classList.remove('hidden');
@@ -587,17 +634,5 @@
         modal.classList.remove('flex');
         document.body.style.overflow = '';
     }
-
-    document.addEventListener('keydown', function(event) {
-        if (event.key === 'Escape') {
-            closeUserModal();
-        }
-    });
-
-    document.getElementById('detailsModal').addEventListener('click', function(event) {
-        if (event.target === this) {
-            closeUserModal();
-        }
-    });
 </script>
 @endpush

@@ -7,13 +7,12 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Kreait\Firebase\Factory;
+use Kreait\Firebase\Messaging\CloudMessage;
+use Kreait\Firebase\Messaging\Notification;
 
 class AdminController extends Controller
 {
-    /**
-     * Connect to Firestore directly via REST transport
-     * with explicit environment credentials to prevent Windows gRPC crashes.
-     */
     private function initFirebase()
     {
         $credentialsPath = base_path('firebase-credentials.json');
@@ -42,7 +41,6 @@ class AdminController extends Controller
         if (is_object($value) && method_exists($value, 'get')) {
             try {
                 $value = $value->get();
-
                 if ($value instanceof \DateTimeInterface) {
                     return $value->getTimestamp();
                 }
@@ -53,17 +51,14 @@ class AdminController extends Controller
 
         if (is_numeric($value)) {
             $number = (float) $value;
-
             if ($number > 9999999999) {
                 $number /= 1000;
             }
-
             return (int) $number;
         }
 
         if (is_string($value) && trim($value) !== '') {
             $parsed = strtotime($value);
-
             return $parsed === false ? 0 : $parsed;
         }
 
@@ -75,21 +70,36 @@ class AdminController extends Controller
         try {
             $database = $this->initFirebase();
             $documents = $database->collection($collection)->documents();
-
             $records = [];
 
             foreach ($documents as $document) {
                 if (!$document->exists()) {
                     continue;
                 }
-
                 $data = $document->data();
-
                 if (!is_array($data)) {
                     continue;
                 }
-
                 $data['id'] = $document->id();
+
+                if ($collection === 'livestock') {
+                    $createdAt = $data['createdAt'] ?? null;
+                    $timestamp = $this->timestampValue($createdAt);
+                    $thirtyDaysInSeconds = 30 * 24 * 60 * 60;
+
+                    if ($timestamp > 0 && (time() - $timestamp) > $thirtyDaysInSeconds) {
+                        $status = strtolower(trim((string)($data['status'] ?? '')));
+                        if ($status !== 'expired' && $status !== 'sold') {
+                            $database->collection('livestock')->document($document->id())->update([
+                                ['path' => 'status', 'value' => 'expired'],
+                                ['path' => 'isAvailable', 'value' => false],
+                            ]);
+                            $data['status'] = 'expired';
+                            $data['isAvailable'] = false;
+                        }
+                    }
+                }
+
                 $records[] = $data;
             }
 
@@ -128,6 +138,7 @@ class AdminController extends Controller
         $data['verificationStatus'] = strtolower(
             trim((string) ($data['verificationStatus'] ?? 'pending'))
         );
+        $data['rejectionReason'] = $data['rejectionReason'] ?? null;
 
         return $data;
     }
@@ -137,9 +148,51 @@ class AdminController extends Controller
         usort($records, function ($a, $b) use ($field) {
             $timeA = $this->timestampValue($a[$field] ?? null);
             $timeB = $this->timestampValue($b[$field] ?? null);
-
             return $timeB <=> $timeA;
         });
+    }
+
+    private function sendFirestoreNotification(string $userId, string $title, string $body, string $type = 'system')
+    {
+        try {
+            $database = $this->initFirebase();
+            
+            // 1. Save notification into Firestore sub-collection
+            $database->collection('users')
+                ->document($userId)
+                ->collection('notifications')
+                ->add([
+                    'title' => $title,
+                    'body' => $body,
+                    'type' => $type,
+                    'isRead' => false,
+                    'timestamp' => \Google\Cloud\Firestore\FieldValue::serverTimestamp(),
+                ]);
+
+            // 2. Fetch target user's FCM Token and trigger push notification (ringing)
+            $userSnapshot = $database->collection('users')->document($userId)->snapshot();
+            if ($userSnapshot->exists()) {
+                $userData = $userSnapshot->data();
+                $fcmToken = $userData['fcmToken'] ?? null;
+
+                if (!empty($fcmToken)) {
+                    $credentialsPath = base_path('firebase-credentials.json');
+                    $factory = (new Factory)->withServiceAccount($credentialsPath);
+                    $messaging = $factory->createMessaging();
+
+                    $message = CloudMessage::withTarget('token', $fcmToken)
+                        ->withNotification(Notification::create($title, $body))
+                        ->withData([
+                            'click_action' => 'FLUTTER_NOTIFICATION_CLICK',
+                            'type' => $type,
+                        ]);
+
+                    $messaging->send($message);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::error('Failed to send Firestore notification & FCM push: ' . $e->getMessage());
+        }
     }
 
     public function dashboard()
@@ -160,7 +213,7 @@ class AdminController extends Controller
                 $email = strtolower(trim((string) ($user['email'] ?? '')));
                 $role = strtolower(trim((string) ($user['role'] ?? 'user')));
                 
-                if ($role !== 'admin' && $email !== 'veterinaryadminoffice@gmail.com' && $email !== 'vetoffice@livestock.com') {
+                if (!in_array($role, ['admin', 'super_admin'], true) && $email !== 'veterinaryadminoffice@gmail.com' && $email !== 'vetoffice@livestock.com') {
                     $usersCount++;
                 }
             }
@@ -229,7 +282,7 @@ class AdminController extends Controller
             $email = strtolower(trim((string) ($user['email'] ?? '')));
             $role = strtolower(trim((string) ($user['role'] ?? 'user')));
 
-            if ($role === 'admin' || $email === 'veterinaryadminoffice@gmail.com' || $email === 'vetoffice@livestock.com') {
+            if (in_array($role, ['admin', 'super_admin'], true) || $email === 'veterinaryadminoffice@gmail.com' || $email === 'vetoffice@livestock.com') {
                 continue;
             }
 
@@ -283,16 +336,40 @@ class AdminController extends Controller
     {
         $validated = $request->validate([
             'status' => ['required', 'string'],
+            'rejectionReason' => ['nullable', 'string', 'max:500'],
         ]);
 
         $statusInput = trim($validated['status']);
         $statusLower = strtolower($statusInput);
+        $rejectionReason = $request->input('rejectionReason');
         
         $database = $this->initFirebase();
-        $database->collection('livestock')->document($id)->update([
+        $docRef = $database->collection('livestock')->document($id);
+        $snapshot = $docRef->snapshot();
+        $listingData = $snapshot->data() ?? [];
+        $sellerId = $listingData['seller_id'] ?? null;
+        $livestockName = $listingData['livestock_name'] ?? 'Livestock';
+
+        $updateData = [
             ['path' => 'status', 'value' => $statusLower === 'available' ? 'available' : $statusInput],
             ['path' => 'isAvailable', 'value' => ($statusLower === 'available' || $statusLower === 'approved')],
-        ]);
+        ];
+
+        if ($statusLower === 'rejected' && $rejectionReason) {
+            $updateData[] = ['path' => 'rejectionReason', 'value' => $rejectionReason];
+        }
+
+        $docRef->update($updateData);
+
+        if ($sellerId) {
+            $isApproved = ($statusLower === 'available' || $statusLower === 'approved');
+            $title = $isApproved ? 'Listing Approved! 🐄' : 'Listing Rejected ⚠️';
+            $body = $isApproved 
+                ? "Your livestock listing '$livestockName' has been approved and is now live on the marketplace."
+                : "Your listing '$livestockName' was rejected. Reason: " . ($rejectionReason ?? 'Review guidelines.');
+                
+            $this->sendFirestoreNotification($sellerId, $title, $body, 'order');
+        }
 
         $action = ($statusLower === 'available' || $statusLower === 'approved')
             ? 'Approved Livestock Listing'
@@ -303,15 +380,33 @@ class AdminController extends Controller
         return redirect()->back()->with('success', 'Livestock listing status updated successfully.');
     }
 
-    public function deleteListing($id)
+    public function deleteListing(Request $request, $id)
     {
+        $rejectionReason = $request->input('rejectionReason', 'Accidental listing approval / verification error by administrator.');
+        
         $database = $this->initFirebase();
-        $database->collection('livestock')->document($id)->delete();
-        $this->logAdminAction($id, 'Deleted Livestock Listing', 'Removed permanently');
-        return redirect()->route('admin.listings')->with('success', 'Livestock listing successfully deleted.');
+        $docRef = $database->collection('livestock')->document($id);
+        $snapshot = $docRef->snapshot();
+        $listingData = $snapshot->data() ?? [];
+        $sellerId = $listingData['seller_id'] ?? null;
+        $livestockName = $listingData['livestock_name'] ?? 'Livestock';
+
+        if ($sellerId) {
+            $this->sendFirestoreNotification(
+                $sellerId, 
+                'Listing Removed ❌', 
+                "Your listing '$livestockName' has been removed by admin. Reason: $rejectionReason", 
+                'system'
+            );
+        }
+
+        $docRef->delete();
+        $this->logAdminAction($id, 'Deleted Livestock Listing', 'Removed permanently: ' . $rejectionReason);
+        
+        return redirect()->route('admin.listings')->with('success', 'Livestock listing successfully deleted and seller notified.');
     }
 
-    public function transactions()
+    public function transactions(Request $request)
     {
         $ordersRaw = $this->getCollectionData('orders');
         $transactionsRaw = $this->getCollectionData('transactions');
@@ -341,6 +436,19 @@ class AdminController extends Controller
         $transactionsList = array_values($uniqueTransactions);
         $this->sortByTimestamp($transactionsList, 'createdAt');
 
+        $selectedMonth = $request->input('month');
+        if ($selectedMonth) {
+            $transactionsList = array_filter($transactionsList, function ($item) use ($selectedMonth) {
+                $timestamp = $item['createdAt'] ?? null;
+                if (!$timestamp) return false;
+                $timeVal = $this->timestampValue($timestamp);
+                if ($timeVal <= 0) return false;
+                
+                return date('Y-m', $timeVal) === $selectedMonth;
+            });
+            $transactionsList = array_values($transactionsList);
+        }
+
         $transactions = array_map(fn($item) => (object) $item, $transactionsList);
         
         $totalRevenue = 0;
@@ -362,8 +470,7 @@ class AdminController extends Controller
         return view('admin.transactions', compact('transactions', 'totalRevenue', 'completedCount', 'pendingCount'));
     }
 
-    // Export Transactions as a Printable PDF Report
-    public function exportPdf()
+    public function exportPdf(Request $request)
     {
         $ordersRaw = $this->getCollectionData('orders');
         $transactionsRaw = $this->getCollectionData('transactions');
@@ -382,6 +489,20 @@ class AdminController extends Controller
             $combined[] = $txn;
         }
 
+        $selectedMonth = $request->input('month');
+        if ($selectedMonth) {
+            $combined = array_filter($combined, function ($item) use ($selectedMonth) {
+                $timestamp = $item['createdAt'] ?? null;
+                if (!$timestamp) return false;
+                
+                $timeVal = is_numeric($timestamp) ? (int)$timestamp : strtotime($timestamp);
+                if ($timeVal <= 0) return false;
+                
+                return date('Y-m', $timeVal) === $selectedMonth;
+            });
+            $combined = array_values($combined);
+        }
+
         $totalRevenue = 0;
         foreach ($combined as $item) {
             $status = strtolower(trim((string) ($item['orderStatus'] ?? $item['status'] ?? '')));
@@ -390,9 +511,12 @@ class AdminController extends Controller
             }
         }
 
+        $monthTitle = $selectedMonth ? \Carbon\Carbon::createFromFormat('Y-m', $selectedMonth)->format('F Y') : 'All Time Records';
+
         return view('admin.transactions_pdf', [
             'transactions' => $combined,
             'totalRevenue' => $totalRevenue,
+            'selectedMonthTitle' => $monthTitle,
             'generatedAt' => now()->setTimezone('Asia/Manila')->format('F d, Y h:i A')
         ]);
     }
@@ -414,11 +538,7 @@ class AdminController extends Controller
     public function updateOrderStatus(Request $request, $id)
     {
         $validated = $request->validate([
-            'orderStatus' => [
-                'required',
-                'string',
-                'max:150',
-            ],
+            'orderStatus' => ['required', 'string', 'max:150'],
         ]);
 
         $status = $validated['orderStatus'];
@@ -530,13 +650,29 @@ class AdminController extends Controller
     {
         $validated = $request->validate([
             'status' => ['required', 'in:pending,verified,rejected,unverified'],
+            'rejectionReason' => ['nullable', 'string', 'max:500'],
         ]);
 
         $status = $validated['status'];
+        $rejectionReason = $request->input('rejectionReason');
+
         $database = $this->initFirebase();
-        $database->collection('users')->document($id)->update([
+        $updatePayload = [
             ['path' => 'verificationStatus', 'value' => $status],
-        ]);
+        ];
+
+        if (($status === 'rejected' || $status === 'unverified') && $rejectionReason) {
+            $updatePayload[] = ['path' => 'rejectionReason', 'value' => $rejectionReason];
+        }
+
+        $database->collection('users')->document($id)->update($updatePayload);
+
+        $title = ucfirst($status) == 'Verified' ? 'Account Verified! 🎉' : 'Verification Update ⚠️';
+        $body = ucfirst($status) == 'Verified' 
+            ? 'Your seller account has been verified by the City Veterinary Office. You can now post listings.' 
+            : 'Your account verification status was updated to: ' . ucfirst($status) . ($rejectionReason ? ". Reason: $rejectionReason" : '');
+        
+        $this->sendFirestoreNotification($id, $title, $body, 'system');
 
         $action = $status === 'verified'
             ? 'Approved Seller Verification'
@@ -602,5 +738,57 @@ class AdminController extends Controller
                 'message' => $e->getMessage(),
             ]);
         }
+    }
+
+    private function ensureSuperAdmin()
+    {
+        $user = auth()->user();
+        if (!$user || $user->role !== 'super_admin') {
+            abort(403, 'Unauthorized action. This section is restricted to Super Administrators only.');
+        }
+    }
+
+    public function manageAdmins()
+    {
+        $this->ensureSuperAdmin();
+        $admins = \App\Models\User::whereIn('role', ['admin', 'super_admin'])->get();
+        return view('admin.admins', compact('admins'));
+    }
+
+    public function storeAdmin(Request $request)
+    {
+        $this->ensureSuperAdmin();
+
+        $validated = $request->validate([
+            'name' => ['required', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password' => ['required', 'string', 'min:6'],
+            'role' => ['required', 'in:admin,super_admin'],
+        ]);
+
+        $newAdmin = \App\Models\User::create([
+            'name' => $validated['name'],
+            'email' => $validated['email'],
+            'password' => Hash::make($validated['password']),
+            'role' => $validated['role'],
+        ]);
+
+        $this->logAdminAction((string) $newAdmin->id, 'Created Administrator Account', $validated['role']);
+
+        return redirect()->route('admin.admins')->with('success', 'New administrator account successfully created.');
+    }
+
+    public function deleteAdmin($id)
+    {
+        $this->ensureSuperAdmin();
+
+        $admin = \App\Models\User::findOrFail($id);
+
+        $adminEmail = $admin->email;
+        $admin->delete();
+
+        $this->logAdminAction((string) $id, 'Revoked Administrator Access', $adminEmail);
+
+        return redirect()->route('admin.admins')->with('success', 'Administrator account successfully removed.');
     }
 }

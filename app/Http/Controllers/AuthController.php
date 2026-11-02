@@ -28,28 +28,43 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        $adminEmail = 'veterinaryadminoffice@gmail.com';
-        $adminPassword = 'Vetoffice@2026';
+        // Find user in the local database and verify they are an admin or super_admin
+        $user = User::where('email', $credentials['email'])->first();
 
-        if (
-            strtolower($credentials['email']) !== strtolower($adminEmail) ||
-            $credentials['password'] !== $adminPassword
-        ) {
+        if (!$user || !Hash::check($credentials['password'], $user->password) || !in_array($user->role, ['admin', 'super_admin'], true)) {
             return back()
-                ->withErrors(['email' => 'Invalid administrator email or password.'])
+                ->withErrors(['email' => 'Invalid administrator credentials or unauthorized role.'])
                 ->onlyInput('email');
-        }
-
-        $user = User::firstOrNew(['email' => $adminEmail]);
-
-        if (!$user->exists) {
-            $user->name = 'System Administrator';
-            $user->password = Hash::make($adminPassword);
-            $user->save();
         }
 
         Auth::login($user);
         $request->session()->regenerate();
+
+        // Log admin login to activity logs in Firebase
+        try {
+            $credentialsPath = base_path('firebase-credentials.json');
+            if (file_exists($credentialsPath)) {
+                putenv('GOOGLE_APPLICATION_CREDENTIALS=' . $credentialsPath);
+                $database = new FirestoreClient([
+                    'projectId'   => env('FIREBASE_PROJECT_ID', 'livestock-express-new-2026'),
+                    'keyFilePath' => $credentialsPath,
+                    'transport'   => 'rest'
+                ]);
+
+                $roleTitle = $user->role === 'super_admin' ? 'Super Administrator' : 'Standard Administrator';
+
+                $database->collection('activity_logs')->add([
+                    'admin_name' => $user->name,
+                    'admin_email' => $user->email,
+                    'actorType' => 'admin',
+                    'action' => "Administrator Login — {$roleTitle} logged into the portal",
+                    'target_user_id' => (string) $user->id,
+                    'timestamp' => now()->toIso8601String(),
+                ]);
+            }
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to record admin login activity: ' . $e->getMessage());
+        }
 
         return redirect()->route('admin.dashboard');
     }
@@ -79,7 +94,6 @@ class AuthController extends Controller
                 'age' => 'required|integer|min:18',
             ]);
 
-            // Automatically remove any unverified pending record for this email so testing is seamless
             PendingUser::where('email', $validated['email'])->delete();
 
             $token = Str::random(64);
@@ -88,7 +102,7 @@ class AuthController extends Controller
                 'name' => $validated['name'],
                 'email' => $validated['email'],
                 'phone' => $validated['phone'],
-                'password' => $validated['password'], // Keep plaintext temporarily for Firebase Auth
+                'password' => $validated['password'],
                 'barangay' => $validated['barangay'],
                 'birthday' => $validated['birthday'],
                 'age' => $validated['age'],
@@ -98,7 +112,6 @@ class AuthController extends Controller
 
             $verifyUrl = route('verify.registration', ['token' => $token]);
 
-            // Sends email using your configured Gmail SMTP settings
             Mail::send('emails.verify-registration', ['user' => $pending, 'verifyUrl' => $verifyUrl], function ($message) use ($pending) {
                 $message->to($pending->email)
                         ->subject('Verify your Livestock Express Account');
@@ -139,7 +152,6 @@ class AuthController extends Controller
             $privateKey = $jsonKey['private_key'];
             $tokenUri = $jsonKey['token_uri'];
 
-            // 1. Create a manually signed JWT for Google OAuth2 token endpoint
             $now = time();
             $header = json_encode(['alg' => 'RS256', 'typ' => 'JWT']);
             $payload = json_encode([
@@ -159,7 +171,6 @@ class AuthController extends Controller
             $base64UrlSignature = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($signature));
             $jwt = $signatureInput . "." . $base64UrlSignature;
 
-            // 2. Exchange JWT for Google OAuth access token
             $client = new \GuzzleHttp\Client();
             $tokenResponse = $client->post($tokenUri, [
                 'form_params' => [
@@ -177,7 +188,6 @@ class AuthController extends Controller
 
             $uid = null;
 
-            // 3. Try to create user in Firebase Authentication
             try {
                 $response = $client->post("https://identitytoolkit.googleapis.com/v1/projects/{$projectId}/accounts", [
                     'headers' => [
@@ -199,7 +209,6 @@ class AuthController extends Controller
                 $errorResponse = json_decode($e->getResponse()->getBody()->getContents(), true);
                 $errorCode = $errorResponse['error']['message'] ?? '';
 
-                // If email already exists in Firebase, fetch the existing user's UID instead of failing
                 if ($errorCode === 'EMAIL_EXISTS') {
                     $lookupResponse = $client->post("https://identitytoolkit.googleapis.com/v1/projects/{$projectId}/accounts:lookup", [
                         'headers' => [
@@ -221,7 +230,6 @@ class AuthController extends Controller
                 throw new \Exception('Failed to obtain Firebase Auth UID.');
             }
 
-            // 4. Save user profile details to Firestore
             putenv('GOOGLE_APPLICATION_CREDENTIALS=' . $credentialsPath);
             $_ENV['GOOGLE_APPLICATION_CREDENTIALS'] = $credentialsPath;
 
@@ -240,14 +248,13 @@ class AuthController extends Controller
                 'city' => 'Alaminos City',
                 'authType' => 'email',
                 'emailVerified' => true,
-                'verificationStatus' => 'unverified', // <--- User can browse, but cannot buy/sell yet
+                'verificationStatus' => 'unverified',
                 'role' => 'user',
                 'birthday' => $pending->birthday,
                 'age' => (int) $pending->age,
                 'createdAt' => time(),
             ], ['merge' => true]);
 
-            // 5. Clean up temporary pending record
             $pending->delete();
 
             return view('auth.success_verified');

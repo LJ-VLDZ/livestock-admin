@@ -81,9 +81,12 @@ Route::middleware(['auth'])->group(function () {
         ->name('admin.transactions.export');
 
 
-    // Deliveries
+    // Deliveries & Status Updates
     Route::get('/admin/deliveries', [AdminController::class, 'deliveries'])
         ->name('admin.deliveries');
+
+    Route::put('/admin/deliveries/{id}/status', [AdminController::class, 'updateOrderStatus'])
+        ->name('admin.deliveries.updateStatus');
 
 
     // Payment Monitoring
@@ -110,5 +113,14 @@ Route::middleware(['auth'])->group(function () {
 
     Route::post('/admin/support/{id}/resolve', [AdminController::class, 'resolveSupportTicket'])
         ->name('admin.support.resolve');
+
+    Route::get('/admin/manage-admins', [AdminController::class, 'manageAdmins'])
+        ->name('admin.admins');
+
+    Route::post('/admin/manage-admins', [AdminController::class, 'storeAdmin'])
+        ->name('admin.admins.store');
+
+    Route::delete('/admin/manage-admins/{id}', [AdminController::class, 'deleteAdmin'])
+        ->name('admin.admins.delete');
 
 });

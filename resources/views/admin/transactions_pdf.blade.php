@@ -32,6 +32,7 @@
     <div class="header">
         <h1>City Veterinary Office — Alaminos City, Pangasinan</h1>
         <p><strong>Livestock Express</strong> | Official Marketplace Transaction & Sales Audit Report</p>
+        <p>Report Scope: <strong>{{ $selectedMonthTitle ?? 'All Time Records' }}</strong></p>
         <p>Generated on: {{ $generatedAt }}</p>
     </div>
 
@@ -66,7 +67,7 @@
                 </tr>
             @empty
                 <tr>
-                    <td colspan="6" style="text-align: center; color: #64748b;">No transaction records found.</td>
+                    <td colspan="6" style="text-align: center; color: #64748b;">No transaction records found for this period.</td>
                 </tr>
             @endforelse
         </tbody>
