@@ -12,7 +12,8 @@ RUN apt-get update && apt-get install -y \
     libicu-dev \
     pkg-config \
     build-essential \
-    && docker-php-ext-install pdo pdo_mysql zip gd intl mbstring bcmath
+    && docker-php-ext-install pdo pdo_mysql zip gd intl mbstring bcmath \
+    && rm -rf /var/lib/apt/lists/*
 
 RUN a2enmod rewrite
 
@@ -26,10 +27,12 @@ WORKDIR /var/www/html
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Install dependencies while bypassing the missing gRPC requirement
+# Install dependencies while bypassing missing gRPC requirement
 RUN composer install --no-dev --optimize-autoloader --no-scripts --ignore-platform-req=ext-grpc
 
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
+# Create directories first if they don't exist, then set permissions
+RUN mkdir -p /var/www/html/storage /var/www/html/bootstrap/cache \
+    && chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 
 RUN sed -i 's/80/8080/g' /etc/apache2/ports.conf /etc/apache2/sites-available/000-default.conf
 
