@@ -3,9 +3,7 @@
     {{-- Brand Header --}}
     <div class="flex h-20 shrink-0 items-center border-b border-white/10 px-5">
         <div class="flex items-center gap-3">
-            <div class="flex h-11 w-11 items-center justify-center rounded-xl border border-white/20 bg-white/10 text-lg font-extrabold text-white">
-                LE
-            </div>
+            <img src="{{ asset('assets/images/app_logo.png') }}" alt="Livestock Express Logo" class="h-11 w-11 rounded-xl object-cover border border-white/20 bg-white/10 shadow-inner">
 
             <div>
                 <h1 class="text-base font-extrabold tracking-tight leading-tight">

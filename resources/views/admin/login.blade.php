@@ -48,11 +48,9 @@
             <div class="absolute -right-10 top-32 h-44 w-44 rounded-full border border-white/10"></div>
             <div class="absolute -bottom-24 -left-16 h-72 w-72 rounded-full bg-emerald-400/10 blur-3xl"></div>
 
-            <div class="relative z-10">
-                <div class="flex items-center gap-3">
-                    <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-300 to-emerald-600 text-lg font-extrabold text-[#0A3622] shadow-lg shadow-black/10">
-                        LE
-                    </div>
+            <div class="flex min-h-[88px] items-center gap-3 border-b border-white/10 px-5">
+            <img src="{{ asset('assets/images/app_logo.png') }}" alt="Livestock Express Logo" class="h-12 w-12 shrink-0 rounded-2xl object-cover border border-white/20 bg-white/10 shadow-lg">
+            <div class="min-w-0">
                     <div>
                         <h1 class="text-lg font-extrabold tracking-tight">Livestock Express</h1>
                         <p class="mt-0.5 text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-300">

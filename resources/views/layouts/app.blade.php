@@ -135,9 +135,7 @@
     <aside id="adminSidebar" class="admin-sidebar flex shrink-0 flex-col">
 
         <div class="flex min-h-[88px] items-center gap-3 border-b border-white/10 px-5">
-            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-300 to-emerald-600 text-lg font-extrabold text-[#0a3622] shadow-lg">
-                LE
-            </div>
+            <img src="{{ asset('assets/images/app_logo.png') }}" alt="Livestock Express Logo" class="h-12 w-12 shrink-0 rounded-2xl object-cover border border-white/20 bg-white/10 shadow-lg">
             <div class="min-w-0">
                 <h1 class="truncate text-base font-extrabold tracking-tight text-white">
                     Livestock Express
