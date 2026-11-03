@@ -24,7 +24,9 @@ RUN sed -ri -s 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf
 WORKDIR /var/www/html
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-RUN composer install --no-dev --optimize-autoloader --no-scripts
+
+# Install dependencies while bypassing the missing gRPC requirement
+RUN composer install --no-dev --optimize-autoloader --no-scripts --ignore-platform-req=ext-grpc
 
 RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 
