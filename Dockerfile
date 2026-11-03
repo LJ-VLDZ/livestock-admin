@@ -13,10 +13,6 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     && docker-php-ext-install pdo pdo_mysql zip gd
 
-# Install gRPC quietly to prevent Cloud Shell CLI stream crashes
-RUN pecl install -o -f grpc \
-    && docker-php-ext-enable grpc
-
 RUN a2enmod rewrite
 
 COPY . /var/www/html
