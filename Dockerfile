@@ -1,6 +1,6 @@
 FROM php:8.2-apache
 
-# Install system dependencies and build tools
+# Install system dependencies, build tools, and ICU headers for intl
 RUN apt-get update && apt-get install -y \
     git \
     unzip \
@@ -9,9 +9,10 @@ RUN apt-get update && apt-get install -y \
     libpng-dev \
     libonig-dev \
     libssl-dev \
+    libicu-dev \
     pkg-config \
     build-essential \
-    && docker-php-ext-install pdo pdo_mysql zip gd
+    && docker-php-ext-install pdo pdo_mysql zip gd intl mbstring bcmath
 
 RUN a2enmod rewrite
 
