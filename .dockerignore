@@ -3,3 +3,22 @@ node_modules
 .git
 .env
 storage/*.key
+
+# Caches and local logs
+storage/logs/*
+storage/framework/cache/data/*
+storage/framework/sessions/*
+storage/framework/views/*
+bootstrap/cache/*.php
+
+# IDE & OS files
+.idea
+.vscode
+.DS_Store
+Thumbs.db
+
+# Docker & CI files
+Dockerfile
+.dockerignore
+docker-compose.yml
+.github
