@@ -151,9 +151,9 @@
                                 ];
 
                                 $searchText = strtolower(($item->livestock_name ?? '') . ' ' . ($item->category ?? '') . ' ' . ($item->ownerName ?? '') . ' ' . ($item->id ?? ''));
-                                $status = strtolower((string) ($item->status ?? 'Not specified'));
+                                $rawStatus = strtolower(trim($item->status ?? 'not specified'));
                             @endphp
-                            <tr class="listing-row transition hover:bg-emerald-50/30" data-search="{{ $searchText }}" data-category="{{ strtolower((string) ($item->category ?? '')) }}" data-status="{{ $status }}">
+                            <tr class="listing-row transition hover:bg-emerald-50/30" data-search="{{ $searchText }}" data-category="{{ strtolower((string) ($item->category ?? '')) }}" data-status="{{ $rawStatus }}">
                                 <td class="px-6 py-4">
                                     <div class="flex items-center gap-3">
                                         <div class="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
@@ -176,7 +176,27 @@
                                 </td>
                                 <td class="whitespace-nowrap px-5 py-4 font-extrabold text-slate-900">₱{{ number_format((float) ($item->price ?? 0), 2) }}</td>
                                 <td class="px-5 py-4">
-                                    <span class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-600">{{ ucfirst($status) }}</span>
+                                    @if($rawStatus === 'available')
+                                        <span class="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                                            <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span> Available
+                                        </span>
+                                    @elseif($rawStatus === 'pending')
+                                        <span class="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700">
+                                            <span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span> Pending
+                                        </span>
+                                    @elseif($rawStatus === 'ordered' || $rawStatus === 'sold')
+                                        <span class="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-bold text-blue-700">
+                                            <span class="h-1.5 w-1.5 rounded-full bg-blue-500"></span> {{ ucfirst($rawStatus) }}
+                                        </span>
+                                    @elseif($rawStatus === 'rejected')
+                                        <span class="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700">
+                                            <span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span> Rejected
+                                        </span>
+                                    @else
+                                        <span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600">
+                                            {{ ucfirst($rawStatus) }}
+                                        </span>
+                                    @endif
                                 </td>
                                 <td class="px-6 py-4">
                                     <div class="flex items-center justify-end gap-2">
@@ -204,7 +224,7 @@
 </div>
 
 {{-- Deletion / Removal Reason Modal --}}
-<div id="deletionReasonModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+<div id="deletionReasonModal" class="fixed inset-0 z-50 hidden pointer-events-none items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
     <div class="w-full max-w-lg rounded-3xl bg-white shadow-2xl overflow-hidden">
         <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-slate-50">
             <h3 class="text-base font-extrabold text-slate-900">Provide Removal / Rejection Reason</h3>
@@ -248,7 +268,7 @@
 </div>
 
 {{-- Full Listing Inspection Modal --}}
-<div id="listingModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+<div id="listingModal" class="fixed inset-0 z-50 hidden pointer-events-none items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
     <div class="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
         <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-slate-50">
             <h3 class="text-lg font-extrabold text-slate-900">Listing Details</h3>
@@ -277,7 +297,7 @@
                             </div>
                         </div>
 
-                        <!-- Video Player Container (Compact & Clickable preview support) -->
+                        <!-- Video Player Container -->
                         <div id="modalVideoContainer" class="hidden">
                             <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ATTACHED VIDEO</p>
                             <div class="relative group rounded-xl overflow-hidden bg-black border border-slate-200">
@@ -343,7 +363,7 @@
 </div>
 
 {{-- Fullscreen Media Lightbox Modal --}}
-<div id="mediaPreviewModal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-950/80 p-4 backdrop-blur-md" role="dialog" aria-modal="true">
+<div id="mediaPreviewModal" class="fixed inset-0 z-[60] hidden pointer-events-none items-center justify-center bg-slate-950/80 p-4 backdrop-blur-md" role="dialog" aria-modal="true">
     <div class="relative max-h-[95vh] max-w-5xl w-full flex flex-col items-center justify-center">
         <button type="button" onclick="closeMediaPreview()" class="absolute -top-12 right-0 rounded-xl bg-white/10 p-2 text-white hover:bg-white/20 transition">
             <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -358,17 +378,86 @@
 @push('scripts')
 <script>
 document.addEventListener('DOMContentLoaded', function () {
-    // Search & filter scripts remain intact...
+    const searchInput = document.getElementById('listingSearch');
+    const categoryFilter = document.getElementById('categoryFilter');
+    const statusTabs = document.querySelectorAll('.status-tab');
+    const listingRows = document.querySelectorAll('.listing-row');
+    const noSearchResults = document.getElementById('noSearchResults');
+    const resultCount = document.getElementById('listingResultCount');
+
+    let currentStatus = 'all';
+
+    function filterListings() {
+        const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+        const selectedCategory = categoryFilter ? categoryFilter.value.toLowerCase() : '';
+        
+        let visibleCount = 0;
+
+        listingRows.forEach(row => {
+            const searchData = row.getAttribute('data-search') || '';
+            const categoryData = row.getAttribute('data-category') || '';
+            const statusData = (row.getAttribute('data-status') || '').toLowerCase();
+
+            const matchesSearch = searchData.includes(searchTerm);
+            const matchesCategory = !selectedCategory || categoryData === selectedCategory;
+            
+            let matchesStatus = true;
+            if (currentStatus === 'available') {
+                matchesStatus = statusData === 'available';
+            } else if (currentStatus === 'pending') {
+                matchesStatus = statusData === 'pending';
+            } else if (currentStatus === 'ordered') {
+                matchesStatus = statusData === 'ordered' || statusData === 'sold';
+            }
+
+            if (matchesSearch && matchesCategory && matchesStatus) {
+                row.classList.remove('hidden');
+                visibleCount++;
+            } else {
+                row.classList.add('hidden');
+            }
+        });
+
+        if (noSearchResults) {
+            if (visibleCount === 0) {
+                noSearchResults.classList.remove('hidden');
+            } else {
+                noSearchResults.classList.add('hidden');
+            }
+        }
+
+        if (resultCount) {
+            resultCount.textContent = `Showing ${visibleCount} listings`;
+        }
+    }
+
+    if (searchInput) searchInput.addEventListener('input', filterListings);
+    if (categoryFilter) categoryFilter.addEventListener('change', filterListings);
+
+    statusTabs.forEach(tab => {
+        tab.addEventListener('click', function () {
+            statusTabs.forEach(t => {
+                t.classList.remove('border-emerald-600', 'bg-emerald-600', 'text-white');
+                t.classList.add('border-slate-200', 'bg-white', 'text-slate-700');
+            });
+
+            this.classList.remove('border-slate-200', 'bg-white', 'text-slate-700');
+            this.classList.add('border-emerald-600', 'bg-emerald-600', 'text-white');
+
+            currentStatus = this.getAttribute('data-status');
+            filterListings();
+        });
+    });
 });
 
 function openDeletionReasonModal(actionUrl) {
     document.getElementById('deletionReasonForm').action = actionUrl;
-    document.getElementById('deletionReasonModal').classList.remove('hidden');
+    document.getElementById('deletionReasonModal').classList.remove('hidden', 'pointer-events-none');
     document.getElementById('deletionReasonModal').classList.add('flex');
 }
 
 function closeDeletionReasonModal() {
-    document.getElementById('deletionReasonModal').classList.add('hidden');
+    document.getElementById('deletionReasonModal').classList.add('hidden', 'pointer-events-none');
     document.getElementById('deletionReasonModal').classList.remove('flex');
 }
 
@@ -416,6 +505,7 @@ function inspectListingSafe(button) {
                         img.src = url;
                         img.className = 'h-16 w-16 shrink-0 rounded-lg object-cover border border-slate-200 cursor-pointer hover:opacity-80 transition';
                         img.onclick = () => { if (imgEl) imgEl.src = url; };
+                        img.ondblclick = () => openMediaPreview(url, 'image');
                         moreImagesGrid.appendChild(img);
                     }
                 });
@@ -452,7 +542,7 @@ function inspectListingSafe(button) {
 
         const modal = document.getElementById('listingModal');
         if (modal) {
-            modal.classList.remove('hidden');
+            modal.classList.remove('hidden', 'pointer-events-none');
             modal.classList.add('flex');
         }
     } catch (e) {
@@ -468,7 +558,7 @@ function closeListingModal() {
     
     const modal = document.getElementById('listingModal');
     if (modal) {
-        modal.classList.add('hidden');
+        modal.classList.add('hidden', 'pointer-events-none');
         modal.classList.remove('flex');
     }
 }
@@ -494,7 +584,7 @@ function openMediaPreview(url, type) {
 
     const previewModal = document.getElementById('mediaPreviewModal');
     if (previewModal) {
-        previewModal.classList.remove('hidden');
+        previewModal.classList.remove('hidden', 'pointer-events-none');
         previewModal.classList.add('flex');
     }
 }
@@ -507,7 +597,7 @@ function closeMediaPreview() {
     }
     const previewModal = document.getElementById('mediaPreviewModal');
     if (previewModal) {
-        previewModal.classList.add('hidden');
+        previewModal.classList.add('hidden', 'pointer-events-none');
         previewModal.classList.remove('flex');
     }
 }
