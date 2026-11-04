@@ -602,6 +602,29 @@
         document.getElementById('modalIdType').textContent = user.idType || 'N/A';
         document.getElementById('modalLocation').textContent = [user.barangay, user.city].filter(Boolean).join(', ') || 'N/A';
 
+        // Helper to toggle asset containers based on URL existence
+        function bindAsset(imgId, linkId, noTextId, url) {
+            const img = document.getElementById(imgId);
+            const link = document.getElementById(linkId);
+            const noText = document.getElementById(noTextId);
+
+            if (url && url.trim() !== '') {
+                img.src = url;
+                link.href = url;
+                link.classList.remove('hidden');
+                if (noText) noText.classList.add('hidden');
+            } else {
+                img.src = '';
+                link.href = '#';
+                link.classList.add('hidden');
+                if (noText) noText.classList.remove('hidden');
+            }
+        }
+
+        bindAsset('modalFrontImg', 'modalFrontLink', 'modalNoFrontText', user.front);
+        bindAsset('modalBackImg', 'modalBackLink', 'modalNoBackText', user.back);
+        bindAsset('modalFaceImg', 'modalFaceLink', 'modalNoFaceText', user.face);
+
         const statusElement = document.getElementById('modalStatus');
         const isVerified = user.status === 'verified';
         statusElement.textContent = isVerified ? 'Verified Account' : 'Pending Verification';

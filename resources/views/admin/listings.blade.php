@@ -180,9 +180,14 @@
                                 </td>
                                 <td class="px-6 py-4">
                                     <div class="flex items-center justify-end gap-2">
-                                        <button type="button" data-listing="{{ json_encode($listingData, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_HEX_TAG) }}" class="inspect-listing rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-700 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800">Inspect</button>
+                                        <button type="button" 
+                                            data-listing="{{ base64_encode(json_encode($listingData, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP | JSON_HEX_TAG)) }}" 
+                                            onclick="inspectListingSafe(this)" 
+                                            class="inspect-listing rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-xs font-bold text-slate-700 transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-800">
+                                            Inspect
+                                        </button>
                                         
-                                        {{-- Trigger Removal / Deletion Reason Modal (replaces simple confirm popup) --}}
+                                        {{-- Trigger Removal / Deletion Reason Modal --}}
                                         <button type="button" onclick="openDeletionReasonModal('{{ route('admin.deleteListing', $item->id) }}')" class="rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs font-bold text-rose-700 transition hover:bg-rose-100">Delete</button>
                                     </div>
                                 </td>
@@ -242,9 +247,111 @@
     </div>
 </div>
 
-{{-- Listing Inspection Modal --}}
-<div id="listingModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm sm:p-6" role="dialog" aria-modal="true">
-    <!-- Modal content remains identical -->
+{{-- Full Listing Inspection Modal --}}
+<div id="listingModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm" role="dialog" aria-modal="true">
+    <div class="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-slate-50">
+            <h3 class="text-lg font-extrabold text-slate-900">Listing Details</h3>
+            <button type="button" onclick="closeListingModal()" class="rounded-xl p-2 text-slate-400 hover:bg-slate-200">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+        </div>
+        <div class="overflow-y-auto p-6">
+            <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
+                <div>
+                    <!-- Main Image (Clickable to Expand) -->
+                    <div class="relative group cursor-pointer overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                        <img id="modalListingImg" src="" alt="Livestock" class="h-64 w-full object-cover transition duration-300 group-hover:scale-105" onclick="openMediaPreview(this.src, 'image')">
+                        <div class="absolute inset-0 bg-slate-950/20 opacity-0 group-hover:opacity-100 transition flex items-center justify-center pointer-events-none">
+                            <span class="rounded-lg bg-black/60 px-3 py-1 text-xs font-bold text-white backdrop-blur-sm">Click to Enlarge</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Additional Media Section -->
+                    <div id="modalMediaSection" class="mt-4 hidden space-y-4">
+                        <!-- Extra Images Gallery -->
+                        <div id="modalMoreImagesContainer" class="hidden">
+                            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Additional Photos</p>
+                            <div id="modalMoreImagesGrid" class="flex gap-2 overflow-x-auto pb-2 scrollbar-thin">
+                                <!-- Javascript will inject extra images here -->
+                            </div>
+                        </div>
+
+                        <!-- Video Player Container (Compact & Clickable preview support) -->
+                        <div id="modalVideoContainer" class="hidden">
+                            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">ATTACHED VIDEO</p>
+                            <div class="relative group rounded-xl overflow-hidden bg-black border border-slate-200">
+                                <video id="modalListingVideo" controls class="w-full max-h-56 object-contain bg-black"></video>
+                                <button type="button" onclick="openMediaPreview(document.getElementById('modalListingVideo').src, 'video')" class="absolute top-2 right-2 rounded-lg bg-black/60 px-2.5 py-1 text-[10px] font-bold text-white opacity-0 group-hover:opacity-100 transition backdrop-blur-sm">
+                                    Full View
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="space-y-4">
+                    <div>
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Livestock Name</p>
+                        <p id="modalListingName" class="text-xl font-extrabold text-slate-900">-</p>
+                    </div>
+                    <div>
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Asking Price</p>
+                        <p id="modalListingPrice" class="text-2xl font-extrabold text-[#1B5E20]">-</p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Category</p>
+                            <p id="modalListingCategory" class="mt-1 text-sm font-bold text-slate-800">-</p>
+                        </div>
+                        <div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                            <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Seller</p>
+                            <p id="modalListingOwner" class="mt-1 text-sm font-bold text-slate-800">-</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-6 space-y-4">
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Sex</p>
+                        <p id="modalListingSex" class="mt-1 text-sm font-bold text-slate-800">-</p>
+                    </div>
+                    <div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Weight</p>
+                        <p id="modalListingWeight" class="mt-1 text-sm font-bold text-slate-800">-</p>
+                    </div>
+                    <div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Color</p>
+                        <p id="modalListingColor" class="mt-1 text-sm font-bold text-slate-800">-</p>
+                    </div>
+                    <div class="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                        <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Height</p>
+                        <p id="modalListingHeight" class="mt-1 text-sm font-bold text-slate-800">-</p>
+                    </div>
+                </div>
+                <div>
+                    <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Description</p>
+                    <p id="modalListingDesc" class="text-sm text-slate-600 bg-slate-50 p-4 rounded-xl border border-slate-100 whitespace-pre-line">-</p>
+                </div>
+            </div>
+        </div>
+        <div class="flex justify-end border-t border-slate-100 bg-slate-50 px-6 py-4">
+            <button type="button" onclick="closeListingModal()" class="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-100">Close Inspection</button>
+        </div>
+    </div>
+</div>
+
+{{-- Fullscreen Media Lightbox Modal --}}
+<div id="mediaPreviewModal" class="fixed inset-0 z-[60] hidden items-center justify-center bg-slate-950/80 p-4 backdrop-blur-md" role="dialog" aria-modal="true">
+    <div class="relative max-h-[95vh] max-w-5xl w-full flex flex-col items-center justify-center">
+        <button type="button" onclick="closeMediaPreview()" class="absolute -top-12 right-0 rounded-xl bg-white/10 p-2 text-white hover:bg-white/20 transition">
+            <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+        <div id="mediaPreviewContent" class="w-full flex items-center justify-center overflow-hidden rounded-2xl">
+            <!-- Injected dynamically via JS -->
+        </div>
+    </div>
 </div>
 @endsection
 
@@ -263,6 +370,146 @@ function openDeletionReasonModal(actionUrl) {
 function closeDeletionReasonModal() {
     document.getElementById('deletionReasonModal').classList.add('hidden');
     document.getElementById('deletionReasonModal').classList.remove('flex');
+}
+
+function inspectListingSafe(button) {
+    try {
+        const encoded = button.getAttribute('data-listing');
+        const listing = JSON.parse(atob(encoded));
+        
+        if (document.getElementById('modalListingName')) document.getElementById('modalListingName').textContent = listing.name || 'Unnamed';
+        if (document.getElementById('modalListingPrice')) document.getElementById('modalListingPrice').textContent = '₱' + listing.price;
+        if (document.getElementById('modalListingCategory')) document.getElementById('modalListingCategory').textContent = listing.category || 'N/A';
+        if (document.getElementById('modalListingOwner')) document.getElementById('modalListingOwner').textContent = listing.ownerName || 'N/A';
+        
+        if (document.getElementById('modalListingSex')) document.getElementById('modalListingSex').textContent = listing.sex || 'N/A';
+        if (document.getElementById('modalListingWeight')) document.getElementById('modalListingWeight').textContent = listing.weight || 'N/A';
+        if (document.getElementById('modalListingColor')) document.getElementById('modalListingColor').textContent = listing.color || 'N/A';
+        if (document.getElementById('modalListingHeight')) document.getElementById('modalListingHeight').textContent = listing.height || 'N/A';
+        
+        if (document.getElementById('modalListingDesc')) document.getElementById('modalListingDesc').textContent = listing.description || 'No description provided.';
+        
+        const imgEl = document.getElementById('modalListingImg');
+        if (imgEl) {
+            if (listing.imageUrl) {
+                imgEl.src = listing.imageUrl;
+                imgEl.parentElement.classList.remove('hidden');
+            } else {
+                imgEl.src = '';
+                imgEl.parentElement.classList.add('hidden');
+            }
+        }
+
+        const moreImagesContainer = document.getElementById('modalMoreImagesContainer');
+        const moreImagesGrid = document.getElementById('modalMoreImagesGrid');
+        let hasExtraImages = false;
+
+        if (moreImagesContainer && moreImagesGrid) {
+            moreImagesGrid.innerHTML = ''; 
+            const extraImages = Array.isArray(listing.imageUrls) ? listing.imageUrls : [];
+            
+            if (extraImages.length > 0) {
+                hasExtraImages = true;
+                extraImages.forEach(url => {
+                    if(url) {
+                        const img = document.createElement('img');
+                        img.src = url;
+                        img.className = 'h-16 w-16 shrink-0 rounded-lg object-cover border border-slate-200 cursor-pointer hover:opacity-80 transition';
+                        img.onclick = () => { if (imgEl) imgEl.src = url; };
+                        moreImagesGrid.appendChild(img);
+                    }
+                });
+                moreImagesContainer.classList.remove('hidden');
+            } else {
+                moreImagesContainer.classList.add('hidden');
+            }
+        }
+
+        const videoContainer = document.getElementById('modalVideoContainer');
+        const videoEl = document.getElementById('modalListingVideo');
+        let hasVideo = false;
+
+        if (videoContainer && videoEl) {
+            if (listing.videoUrl) {
+                hasVideo = true;
+                videoEl.src = listing.videoUrl;
+                videoContainer.classList.remove('hidden');
+            } else {
+                videoEl.src = '';
+                videoEl.pause(); 
+                videoContainer.classList.add('hidden');
+            }
+        }
+
+        const mediaSection = document.getElementById('modalMediaSection');
+        if (mediaSection) {
+            if (hasExtraImages || hasVideo) {
+                mediaSection.classList.remove('hidden');
+            } else {
+                mediaSection.classList.add('hidden');
+            }
+        }
+
+        const modal = document.getElementById('listingModal');
+        if (modal) {
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+    } catch (e) {
+        console.error('Error opening listing modal:', e);
+    }
+}
+
+function closeListingModal() {
+    const videoEl = document.getElementById('modalListingVideo');
+    if (videoEl) {
+        videoEl.pause();
+    }
+    
+    const modal = document.getElementById('listingModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+    }
+}
+
+function openMediaPreview(url, type) {
+    const container = document.getElementById('mediaPreviewContent');
+    if (!container) return;
+    container.innerHTML = '';
+
+    if (type === 'video') {
+        const video = document.createElement('video');
+        video.src = url;
+        video.controls = true;
+        video.autoplay = true;
+        video.className = 'max-h-[85vh] max-w-full rounded-2xl bg-black object-contain shadow-2xl';
+        container.appendChild(video);
+    } else {
+        const img = document.createElement('img');
+        img.src = url;
+        img.className = 'max-h-[85vh] max-w-full rounded-2xl object-contain shadow-2xl';
+        container.appendChild(img);
+    }
+
+    const previewModal = document.getElementById('mediaPreviewModal');
+    if (previewModal) {
+        previewModal.classList.remove('hidden');
+        previewModal.classList.add('flex');
+    }
+}
+
+function closeMediaPreview() {
+    const container = document.getElementById('mediaPreviewContent');
+    if (container) {
+        const video = container.querySelector('video');
+        if (video) video.pause();
+    }
+    const previewModal = document.getElementById('mediaPreviewModal');
+    if (previewModal) {
+        previewModal.classList.add('hidden');
+        previewModal.classList.remove('flex');
+    }
 }
 </script>
 @endpush
