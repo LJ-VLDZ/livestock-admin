@@ -38,14 +38,26 @@ class AdminController extends Controller
             return $value->getTimestamp();
         }
 
-        if (is_object($value) && method_exists($value, 'get')) {
-            try {
-                $value = $value->get();
-                if ($value instanceof \DateTimeInterface) {
-                    return $value->getTimestamp();
+        if (is_object($value)) {
+            if (method_exists($value, 'getTimestamp')) {
+                return $value->getTimestamp();
+            }
+            if (method_exists($value, 'get')) {
+                try {
+                    $inner = $value->get();
+                    if ($inner instanceof \DateTimeInterface) {
+                        return $inner->getTimestamp();
+                    }
+                    if (is_object($inner) && method_exists($inner, 'getTimestamp')) {
+                        return $inner->getTimestamp();
+                    }
+                } catch (\Throwable $e) {
+                    // Ignore and fall through
                 }
-            } catch (\Throwable $e) {
-                return 0;
+            }
+            if (method_exists($value, '__toString')) {
+                $parsed = strtotime((string)$value);
+                if ($parsed !== false) return $parsed;
             }
         }
 
@@ -157,7 +169,6 @@ class AdminController extends Controller
         try {
             $database = $this->initFirebase();
             
-            // 1. Save notification into Firestore sub-collection
             $database->collection('users')
                 ->document($userId)
                 ->collection('notifications')
@@ -169,7 +180,6 @@ class AdminController extends Controller
                     'timestamp' => \Google\Cloud\Firestore\FieldValue::serverTimestamp(),
                 ]);
 
-            // 2. Fetch target user's FCM Token and trigger push notification (ringing)
             $userSnapshot = $database->collection('users')->document($userId)->snapshot();
             if ($userSnapshot->exists()) {
                 $userData = $userSnapshot->data();
@@ -580,48 +590,39 @@ class AdminController extends Controller
             $actorType = strtolower(trim((string) ($log['actorType'] ?? $log['actor_type'] ?? '')));
             $isAdminActivity = ($actorType === 'admin' || !empty($log['admin_name']) || isset($log['admin_email']));
 
-            if ($isAdminActivity) {
-                $log['actorType'] = 'admin';
-                $log['admin_name'] = trim((string) ($log['admin_name'] ?? $log['actor_name'] ?? 'City Veterinary Office'));
-                $log['admin_email'] = trim((string) ($log['admin_email'] ?? $log['actor_email'] ?? 'vetoffice@livestock.com'));
+            if ($isAdminActivity) {$log['actorType'] = 'admin';
+                $log['admin_name'] = trim((string) ($log['admin_name'] ?? $log['actor_name'] ?? 'City Veterinary Office'));$log['admin_email'] = trim((string) ($log['admin_email'] ?? $log['actor_email'] ?? 'vetoffice@livestock.com'));
             } else {
                 $log['actorType'] = 'user';
-                $userId = trim((string) ($log['user_id'] ?? $log['userId'] ?? ''));
-                $userEmail = strtolower(trim((string) ($log['user_email'] ?? $log['email'] ?? '')));
+                $userId = trim((string) ($log['user_id'] ?? $log['userId'] ?? ''));$userEmail = strtolower(trim((string) ($log['user_email'] ?? $log['email'] ?? '')));
 
                 $matchedUser = [];
-                if ($userId !== '' && isset($usersById[$userId])) {
-                    $matchedUser = $usersById[$userId];
-                } elseif ($userEmail !== '' && isset($usersByEmail[$userEmail])) {
-                    $matchedUser = $usersByEmail[$userEmail];
+                if ($userId !== '' && isset($usersById[$userId])) {$matchedUser = $usersById[$userId];
+                } elseif ($userEmail !== '' && isset($usersByEmail[$userEmail])) {$matchedUser = $usersByEmail[$userEmail];
                 }
 
                 $resolvedName = trim((string) ($matchedUser['name'] ?? ''));
-                if ($resolvedName === '' && !empty($matchedUser['firstName'])) {
-                    $resolvedName = trim($matchedUser['firstName'] . ' ' . ($matchedUser['lastName'] ?? ''));
+                if ($resolvedName === '' && !empty($matchedUser['firstName'])) {$resolvedName = trim($matchedUser['firstName'] . ' ' . ($matchedUser['lastName'] ?? ''));
                 }
 
-                $log['user_name'] = trim((string) ($resolvedName !== '' ? $resolvedName : ($log['user_name'] ?? $log['name'] ?? 'Registered User')));
+                $log['user_name'] = trim((string) ($resolvedName !== '' ?$resolvedName : ($log['user_name'] ?? $log['name'] ?? 'Registered User')));
             }
 
-            $targetId = trim((string) ($log['target_user_id'] ?? ''));
-            $log['target_display_id'] = $targetId !== '' ? '#' . (strlen($targetId) > 12 ? substr($targetId, 0, 12) . '...' : $targetId) : null;
-            $log['action'] = $action !== '' ? $action : 'Activity recorded';
+            $targetId = trim((string) ($log['target_user_id'] ?? ''));$log['target_display_id'] = $targetId !== '' ? '#' . (strlen($targetId) > 12 ? substr($targetId, 0, 12) . '...' :$targetId) : null;
+            $log['action'] = $action !== '' ?$action : 'Activity recorded';
         }
         unset($log);
 
         $this->sortByTimestamp($allLogs, 'timestamp');
 
         $perPage = 10;
-        $currentPage = Paginator::resolveCurrentPage('page');
-        $currentItems = array_slice($allLogs, ($currentPage - 1) * $perPage, $perPage);
+        $currentPage = Paginator::resolveCurrentPage('page');$currentItems = array_slice($allLogs, ($currentPage - 1) * $perPage,$perPage);
 
         $activityLogs = new LengthAwarePaginator(
-            array_map(fn ($item) => (object) $item, $currentItems),
+            array_map(fn ($item) => (object) $item,$currentItems),
             count($allLogs),
-            $perPage,
-            $currentPage,
-            ['path' => $request->url(), 'query' => $request->query()]
+            $perPage,$currentPage,
+            ['path' => $request->url(), 'query' =>$request->query()]
         );
 
         return view('admin.logs', compact('activityLogs'));
@@ -629,15 +630,15 @@ class AdminController extends Controller
 
     public function supportTickets()
     {
-        $tickets = $this->getCollectionData('support_tickets');
+        $tickets =$this->getCollectionData('support_tickets');
         $this->sortByTimestamp($tickets, 'createdAt');
-        $tickets = array_map(fn ($item) => (object) $item, $tickets);
+        $tickets = array_map(fn ($item) => (object) $item,$tickets);
         return view('admin.support', compact('tickets'));
     }
 
     public function resolveSupportTicket($id)
     {
-        $database = $this->initFirebase();
+        $database =$this->initFirebase();
         $database->collection('support_tickets')->document($id)->update([
             ['path' => 'status', 'value' => 'Resolved'],
         ]);
@@ -646,39 +647,59 @@ class AdminController extends Controller
         return redirect()->back()->with('success', 'Support ticket marked as resolved successfully.');
     }
 
-    public function updateStatus(Request $request, $id)
+    public function updateStatus(Request $request,$id)
     {
-        $validated = $request->validate([
+        $validated =$request->validate([
             'status' => ['required', 'in:pending,verified,rejected,unverified'],
             'rejectionReason' => ['nullable', 'string', 'max:500'],
         ]);
 
-        $status = $validated['status'];
-        $rejectionReason = $request->input('rejectionReason');
+        $status =$validated['status'];
+        $rejectionReason =$request->input('rejectionReason');
 
-        $database = $this->initFirebase();
-        $updatePayload = [
+        $database = $this->initFirebase();$updatePayload = [
             ['path' => 'verificationStatus', 'value' => $status],
         ];
 
-        if (($status === 'rejected' || $status === 'unverified') && $rejectionReason) {
-            $updatePayload[] = ['path' => 'rejectionReason', 'value' => $rejectionReason];
+        if (($status === 'rejected' || $status === 'unverified') &&$rejectionReason) {
+            $updatePayload[] = ['path' => 'rejectionReason', 'value' =>$rejectionReason];
         }
 
         $database->collection('users')->document($id)->update($updatePayload);
+
+        // Record User Passed Verification in activity_logs
+        if ($status === 'verified') {
+            try {
+                $userSnapshot = $database->collection('users')->document($id)->snapshot();
+                $userData =$userSnapshot->exists() ? $userSnapshot->data() : [];$userName = $userData['name'] ?? $userData['fullName'] ?? 'Registered User';
+                $userEmail =$userData['email'] ?? '';
+
+                $database->collection('activity_logs')->add([
+                    'actorType' => 'user',
+                    'user_id' => $id,
+                    'user_email' => $userEmail,
+                    'user_name' => $userName,
+                    'action' => 'Passed account verification',
+                    'details' => 'User account verified by City Veterinary Office',
+                    'timestamp' => \Google\Cloud\Firestore\FieldValue::serverTimestamp(),
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('Failed to log verification milestone: ' . $e->getMessage());
+            }
+        }
 
         $title = ucfirst($status) == 'Verified' ? 'Account Verified! 🎉' : 'Verification Update ⚠️';
         $body = ucfirst($status) == 'Verified' 
             ? 'Your seller account has been verified by the City Veterinary Office. You can now post listings.' 
             : 'Your account verification status was updated to: ' . ucfirst($status) . ($rejectionReason ? ". Reason: $rejectionReason" : '');
         
-        $this->sendFirestoreNotification($id, $title, $body, 'system');
+        $this->sendFirestoreNotification($id, $title,$body, 'system');
 
-        $action = $status === 'verified'
+        $action =$status === 'verified'
             ? 'Approved Seller Verification'
-            : ($status === 'rejected' || $status === 'unverified' ? 'Rejected/Revoked Seller Verification' : 'Reset Seller Verification');
+            : ($status === 'rejected' ||$status === 'unverified' ? 'Rejected/Revoked Seller Verification' : 'Reset Seller Verification');
 
-        $this->logAdminAction($id, $action, $status);
+        $this->logAdminAction($id, $action,$status);
         return redirect()->back()->with('success', 'User verification status updated successfully.');
     }
 
@@ -703,8 +724,8 @@ class AdminController extends Controller
             ]);
         }
 
-        $admin->name = $request->input('name');
-        $admin->email = $request->input('email');
+        $admin->name =$request->input('name');
+        $admin->email =$request->input('email');
 
         if ($request->filled('password')) {
             $admin->password = Hash::make($request->input('password'));
@@ -714,11 +735,10 @@ class AdminController extends Controller
         return redirect()->back()->with('success', 'Admin profile settings updated successfully.');
     }
 
-    private function logAdminAction(string $targetId, string $actionType, string $statusValue): void
+    private function logAdminAction(string $targetId, string $actionType, string$statusValue): void
     {
         try {
-            $database = $this->initFirebase();
-            $admin = auth()->user();
+            $database = $this->initFirebase();$admin = auth()->user();
 
             $adminName = $admin ? ($admin->name ?? 'City Veterinary Office') : 'City Veterinary Office';
             $adminEmail = $admin ? ($admin->email ?? 'vetoffice@livestock.com') : 'vetoffice@livestock.com';
@@ -729,7 +749,7 @@ class AdminController extends Controller
                 'actorType' => 'admin',
                 'action' => "{$actionType} — Target ID: {$targetId} (Status: {$statusValue})",
                 'target_user_id' => $targetId,
-                'timestamp' => now()->toIso8601String(),
+                'timestamp' => \Google\Cloud\Firestore\FieldValue::serverTimestamp(),
             ]);
         } catch (\Throwable $e) {
             Log::error('Failed to record admin activity.', [
@@ -743,15 +763,14 @@ class AdminController extends Controller
     private function ensureSuperAdmin()
     {
         $user = auth()->user();
-        if (!$user || $user->role !== 'super_admin') {
+        if (!$user ||$user->role !== 'super_admin') {
             abort(403, 'Unauthorized action. This section is restricted to Super Administrators only.');
         }
     }
 
     public function manageAdmins()
     {
-        $this->ensureSuperAdmin();
-        $admins = \App\Models\User::whereIn('role', ['admin', 'super_admin'])->get();
+        $this->ensureSuperAdmin();$admins = \App\Models\User::whereIn('role', ['admin', 'super_admin'])->get();
         return view('admin.admins', compact('admins'));
     }
 
@@ -759,7 +778,7 @@ class AdminController extends Controller
     {
         $this->ensureSuperAdmin();
 
-        $validated = $request->validate([
+        $validated =$request->validate([
             'name' => ['required', 'string', 'max:255'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', 'min:6'],
@@ -773,7 +792,7 @@ class AdminController extends Controller
             'role' => $validated['role'],
         ]);
 
-        $this->logAdminAction((string) $newAdmin->id, 'Created Administrator Account', $validated['role']);
+        $this->logAdminAction((string) $newAdmin->id, 'Created Administrator Account',$validated['role']);
 
         return redirect()->route('admin.admins')->with('success', 'New administrator account successfully created.');
     }
@@ -784,10 +803,10 @@ class AdminController extends Controller
 
         $admin = \App\Models\User::findOrFail($id);
 
-        $adminEmail = $admin->email;
+        $adminEmail =$admin->email;
         $admin->delete();
 
-        $this->logAdminAction((string) $id, 'Revoked Administrator Access', $adminEmail);
+        $this->logAdminAction((string) $id, 'Revoked Administrator Access',$adminEmail);
 
         return redirect()->route('admin.admins')->with('success', 'Administrator account successfully removed.');
     }
