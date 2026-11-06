@@ -14,23 +14,33 @@ use Kreait\Firebase\Messaging\Notification;
 class AdminController extends Controller
 {
     private function initFirebase()
-    {
-        $credentialsPath = base_path('firebase-credentials.json');
+{
+    $credentialsPath = base_path('firebase-credentials.json');
 
-        if (!file_exists($credentialsPath)) {
-            throw new \Exception('firebase-credentials.json not found in project root directory.');
-        }
-
-        putenv('GOOGLE_APPLICATION_CREDENTIALS=' . $credentialsPath);
-        $_ENV['GOOGLE_APPLICATION_CREDENTIALS'] = $credentialsPath;
-        $_SERVER['GOOGLE_APPLICATION_CREDENTIALS'] = $credentialsPath;
-
-        return new \Google\Cloud\Firestore\FirestoreClient([
-            'projectId'   => env('FIREBASE_PROJECT_ID', 'livestock-express-new-2026'),
-            'keyFilePath' => $credentialsPath,
-            'transport'   => 'rest'
-        ]);
+    if (!file_exists($credentialsPath)) {
+        throw new \Exception('firebase-credentials.json not found in project root directory.');
     }
+
+    $keyFile = json_decode(
+        file_get_contents($credentialsPath),
+        true
+    );
+
+    if (!is_array($keyFile)) {
+        throw new \Exception('Invalid Firebase credentials JSON file.');
+    }
+
+    $credentials = \Google\Auth\Credentials\ServiceAccountCredentials::makeCredentials(
+        ['https://www.googleapis.com/auth/datastore'],
+        $keyFile
+    );
+
+    return new \Google\Cloud\Firestore\FirestoreClient([
+        'projectId' => env('FIREBASE_PROJECT_ID', 'livestock-express-new-2026'),
+        'credentials' => $credentials,
+        'transport' => 'rest',
+    ]);
+}
 
     private function timestampValue($value): int
     {
