@@ -10,11 +10,11 @@ class PendingUser extends Model
         'name',
         'email',
         'phone',
-        'password' => 'encrypted',
+        'password',
         'barangay',
-        'birthday' => 'date',
+        'birthday',
         'age',
         'token',
-        'expires_at' => 'datetime',
+        'expires_at',
     ];
 }
