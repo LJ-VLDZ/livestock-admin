@@ -10,11 +10,11 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('pending_users', function (Blueprint $table) {
-            $id = $table->id();
+            $table->id();
             $table->string('name');
             $table->string('email')->unique();
             $table->string('phone');
-            $table->string('password'); // Hashed temporary storage
+            $table->text('password');
             $table->string('barangay');
             $table->date('birthday');
             $table->integer('age');

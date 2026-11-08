@@ -14,3 +14,8 @@ Route::post('/verify-register-otp', [AdminController::class, 'verifyRegisterOtp'
 
 // New pending registration route for Flutter app
 Route::post('/register/pending', [AuthController::class, 'registerPending']);
+
+// Resend the verification link for a pending Flutter registration.
+// The server-side throttle is important; the Flutter cooldown alone is not security.
+Route::post('/register/resend-verification', [AuthController::class, 'resendPendingVerification'])
+    ->middleware('throttle:3,1');

@@ -8,6 +8,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Str;
 use Google\Cloud\Firestore\FirestoreClient;
 
@@ -123,7 +124,7 @@ class AuthController extends Controller
                 'name' => $validated['name'],
                 'email' => $validated['email'],
                 'phone' => $validated['phone'],
-                'password' => $validated['password'],
+                'password' => Crypt::encryptString($validated['password']),
                 'barangay' => $validated['barangay'],
                 'birthday' => $validated['birthday'],
                 'age' => $validated['age'],
@@ -167,6 +168,62 @@ class AuthController extends Controller
      * Creates the Firebase account and Firestore user profile.
      * Records successful user registration in activity_logs.
      */
+
+    /**
+     * Resend the Laravel email-verification link for a pending registration.
+     * A fresh token is generated and the 15-minute expiry is renewed.
+     */
+    public function resendPendingVerification(Request $request)
+    {
+        $validated = $request->validate([
+            'email' => ['required', 'email'],
+        ]);
+
+        try {
+            $pending = PendingUser::where('email', strtolower(trim($validated['email'])))->first();
+
+            if (!$pending) {
+                return response()->json([
+                    'message' => 'No pending registration was found for this email. Please register again or contact support.',
+                ], 404);
+            }
+
+            $token = Str::random(64);
+
+            $pending->token = $token;
+            $pending->expires_at = now()->addMinutes(15);
+            $pending->save();
+
+            $verifyUrl = route('verify.registration', [
+                'token' => $token,
+            ]);
+
+            Mail::send(
+                'emails.verify-registration',
+                [
+                    'user' => $pending,
+                    'verifyUrl' => $verifyUrl,
+                ],
+                function ($message) use ($pending) {
+                    $message->to($pending->email)
+                        ->subject('Verify your Livestock Express Account');
+                }
+            );
+
+            return response()->json([
+                'message' => 'A new verification email has been sent. Please check your inbox and spam folder.',
+            ], 200);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error(
+                'Resend verification email error: ' . $e->getMessage()
+            );
+
+            return response()->json([
+                'message' => 'Unable to resend the verification email right now. Please try again later.',
+            ], 500);
+        }
+    }
+
     public function verifyRegistration(Request $request)
     {
         $token = $request->query('token');
@@ -281,7 +338,7 @@ class AuthController extends Controller
                         ],
                         'json' => [
                             'email' => $pending->email,
-                            'password' => $pending->password,
+                            'password' => $this->getPendingPlaintextPassword($pending),
                             'displayName' => $pending->name,
                             'emailVerified' => true,
                         ],
@@ -408,8 +465,25 @@ class AuthController extends Controller
             );
 
             return view('auth.error', [
-                'message' => $e->getMessage()
+                'message' => 'We could not complete your registration. Please try again or contact support.'
             ]);
         }
     }
+
+    /**
+     * Return the original password needed for Firebase account creation.
+     * New pending registrations are encrypted with Laravel Crypt.
+     * The fallback is temporary compatibility for pending rows created
+     * before encryption was introduced; remove it after old pending rows expire.
+     */
+    private function getPendingPlaintextPassword(PendingUser $pending): string
+    {
+        try {
+            return Crypt::decryptString($pending->password);
+        } catch (\Illuminate\Contracts\Encryption\DecryptException $e) {
+            // Legacy pending row stored before the encryption update.
+            return $pending->password;
+        }
+    }
+
 }
