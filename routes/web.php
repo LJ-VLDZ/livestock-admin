@@ -88,6 +88,12 @@ Route::middleware(['auth'])->group(function () {
     Route::put('/admin/deliveries/{id}/status', [AdminController::class, 'updateOrderStatus'])
         ->name('admin.deliveries.updateStatus');
 
+    Route::post('/admin/deliveries/{id}/schedule-inspection', [AdminController::class, 'scheduleCvoInspection'])
+        ->name('admin.deliveries.scheduleInspection');
+
+    Route::post('/admin/deliveries/{id}/inspection-result', [AdminController::class, 'recordCvoInspectionResult'])
+        ->name('admin.deliveries.inspectionResult');
+
 
     // Payment Monitoring
     Route::get('/admin/payments', [AdminController::class, 'payments'])

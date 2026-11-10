@@ -142,6 +142,7 @@
                                 $isOpen = $ticketStatus === 'open';
                             @endphp
                             <tr class="transition hover:bg-emerald-50/30">
+                                <td class="whitespace-nowrap px-5 py-4 text-xs font-extrabold text-amber-700">#{{ $loop->iteration }}</td>
                                 <td class="px-6 py-4">
                                     <span class="inline-flex rounded-lg border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800">
                                         {{ $ticket->category ?? 'General' }}

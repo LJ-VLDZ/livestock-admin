@@ -165,13 +165,25 @@ class AdminController extends Controller
         return $data;
     }
 
-    private function sortByTimestamp(array &$records, string $field): void
+    private function sortByTimestamp(array &$records, string $field, bool $ascending = false): void
     {
-        usort($records, function ($a, $b) use ($field) {
+        usort($records, function ($a, $b) use ($field, $ascending) {
             $timeA = $this->timestampValue($a[$field] ?? null);
             $timeB = $this->timestampValue($b[$field] ?? null);
-            return $timeB <=> $timeA;
+            // Missing timestamps are always placed last.
+            if ($timeA === 0 && $timeB !== 0) return 1;
+            if ($timeB === 0 && $timeA !== 0) return -1;
+            return $ascending ? ($timeA <=> $timeB) : ($timeB <=> $timeA);
         });
+    }
+
+    private function isTechnicalSupportTicket(array $ticket): bool
+    {
+        $category = strtolower(trim((string) ($ticket['category'] ?? '')));
+        return $category === 'technical bug / error'
+            || str_contains($category, 'technical')
+            || str_contains($category, 'bug')
+            || str_contains($category, 'error');
     }
 
     private function sendFirestoreNotification(string $userId, string $title, string $body, string $type = 'system')
@@ -322,6 +334,11 @@ class AdminController extends Controller
             }
         }
 
+        // Use the dedicated ID submission timestamp; never substitute account creation time.
+        $pendingArray = array_map(fn ($user) => (array) $user, $pendingUsers);
+        $this->sortByTimestamp($pendingArray, 'verificationSubmittedAt', true);
+        $pendingUsers = array_map(fn ($user) => (object) $user, $pendingArray);
+
         return view('admin.verifications', compact(
             'pendingUsers',
             'verifiedUsers',
@@ -348,6 +365,10 @@ class AdminController extends Controller
                 $pendingListings[] = (object) $item;
             }
         }
+
+        $pendingArray = array_map(fn ($item) => (array) $item, $pendingListings);
+        $this->sortByTimestamp($pendingArray, 'createdAt', true);
+        $pendingListings = array_map(fn ($item) => (object) $item, $pendingArray);
 
         return view('admin.pending-listings', compact('pendingListings'));
     }
@@ -563,17 +584,126 @@ class AdminController extends Controller
 
         $status = $validated['orderStatus'];
         $database = $this->initFirebase();
-        $database->collection('orders')->document($id)->update([
+
+        $updatePayload = [
             ['path' => 'orderStatus', 'value' => $status],
-        ]);
+        ];
+
+        // Record lifecycle timestamps whenever the order status advances.
+        $normalizedStatus = strtolower(trim($status));
+        if ($normalizedStatus === 'dispatched') {
+            $updatePayload[] = [
+                'path' => 'dispatchedAt',
+                'value' => \Google\Cloud\Firestore\FieldValue::serverTimestamp(),
+            ];
+        }
+        if (in_array($normalizedStatus, ['delivered', 'completed'], true)) {
+            $updatePayload[] = [
+                'path' => 'deliveredAt',
+                'value' => \Google\Cloud\Firestore\FieldValue::serverTimestamp(),
+            ];
+        }
+
+        // Business rule: Delivered/Completed means the seller has collected COD.
+        if (in_array($normalizedStatus, ['delivered', 'completed'], true)) {
+            $updatePayload[] = ['path' => 'paymentStatus', 'value' => 'Paid'];
+            $updatePayload[] = [
+                'path' => 'paidAt',
+                'value' => \Google\Cloud\Firestore\FieldValue::serverTimestamp(),
+            ];
+        }
+
+        $database->collection('orders')->document($id)->update($updatePayload);
 
         $this->logAdminAction($id, 'Updated Order/Delivery Status', $status);
         return redirect()->back()->with('success', 'Delivery and order status updated successfully.');
     }
 
+    public function scheduleCvoInspection(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'inspectionDate' => ['required', 'date'],
+            'inspectorName' => ['required', 'string', 'max:150'],
+            'inspectionNotes' => ['nullable', 'string', 'max:1000'],
+        ]);
+        $database = $this->initFirebase();
+        $database->collection('orders')->document($id)->update([
+            ['path' => 'inspectionStatus', 'value' => 'Scheduled'],
+            ['path' => 'inspectionDate', 'value' => $validated['inspectionDate']],
+            ['path' => 'inspectorName', 'value' => $validated['inspectorName']],
+            ['path' => 'inspectionNotes', 'value' => $validated['inspectionNotes'] ?? ''],
+            ['path' => 'inspectionScheduledAt', 'value' => \Google\Cloud\Firestore\FieldValue::serverTimestamp()],
+            ['path' => 'orderStatus', 'value' => 'CVO Inspection Scheduled'],
+        ]);
+        $this->logAdminAction($id, 'Scheduled CVO On-Site Inspection', $validated['inspectionDate']);
+        return redirect()->back()->with('success', 'CVO on-site inspection scheduled successfully.');
+    }
+
+    public function recordCvoInspectionResult(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'inspectionResult' => ['required', 'in:approved,rejected,reinspection'],
+            'inspectionNotes' => ['nullable', 'string', 'max:1000'],
+            'expectedFulfillmentDate' => ['required_if:inspectionResult,approved', 'nullable', 'date', 'after_or_equal:today'],
+        ]);
+        $result = $validated['inspectionResult'];
+        $status = $result === 'approved' ? 'CVO Inspection Approved' : ($result === 'rejected' ? 'CVO Inspection Rejected' : 'For CVO Reinspection');
+        $database = $this->initFirebase();
+
+        $updatePayload = [
+            ['path' => 'inspectionStatus', 'value' => ucfirst($result)],
+            ['path' => 'inspectionResult', 'value' => ucfirst($result)],
+            ['path' => 'inspectionResultNotes', 'value' => $validated['inspectionNotes'] ?? ''],
+            ['path' => 'inspectionSubmittedAt', 'value' => \Google\Cloud\Firestore\FieldValue::serverTimestamp()],
+            ['path' => 'inspectionCompletedAt', 'value' => \Google\Cloud\Firestore\FieldValue::serverTimestamp()],
+            ['path' => 'orderStatus', 'value' => $result === 'approved' ? 'Ready for Dispatch/Pick Up' : $status],
+        ];
+
+        // This is the planned delivery/pickup date, not the CVO inspection visit date.
+        if ($result === 'approved') {
+            $updatePayload[] = ['path' => 'expectedFulfillmentDate', 'value' => $validated['expectedFulfillmentDate']];
+            $updatePayload[] = ['path' => 'expectedFulfillmentDateSetAt', 'value' => \Google\Cloud\Firestore\FieldValue::serverTimestamp()];
+        } else {
+            $updatePayload[] = ['path' => 'expectedFulfillmentDate', 'value' => null];
+        }
+
+        $database->collection('orders')->document($id)->update($updatePayload);
+        $this->logAdminAction($id, 'Recorded CVO Inspection Result', $status);
+        return redirect()->back()->with('success', 'CVO inspection result recorded.');
+    }
+
     public function payments()
     {
         $records = $this->getCollectionData('orders');
+        $users = $this->getCollectionData('users');
+        $usersById = [];
+        foreach ($users as $user) {
+            if (!empty($user['id'])) {
+                $fullName = trim((string) ($user['name'] ?? $user['fullName'] ?? (($user['firstName'] ?? '') . ' ' . ($user['lastName'] ?? ''))));
+                $usersById[$user['id']] = $fullName;
+            }
+        }
+
+        foreach ($records as &$record) {
+            $buyerId = (string) ($record['buyerId'] ?? $record['buyer_id'] ?? '');
+            $record['buyerName'] = $record['buyerName'] ?? $record['customerName'] ?? ($usersById[$buyerId] ?? 'Unknown Buyer');
+            $record['paymentMethod'] = $record['paymentMethod'] ?? $record['payment_method'] ?? 'Not specified';
+            $record['amount'] = $record['amount'] ?? $record['totalAmount'] ?? $record['total'] ?? $record['itemPrice'] ?? 0;
+            // Delivered/Completed means COD was collected under the confirmed business rule.
+            $orderStatus = strtolower(trim((string) ($record['orderStatus'] ?? $record['status'] ?? '')));
+            $explicitPaymentStatus = $record['paymentStatus'] ?? null;
+
+            if (!empty($explicitPaymentStatus)) {
+                $record['status'] = $explicitPaymentStatus;
+            } elseif (in_array($orderStatus, ['delivered', 'completed'], true)) {
+                // Backward compatibility for older orders that predate paymentStatus.
+                $record['status'] = 'Paid';
+            } else {
+                $record['status'] = 'Unpaid';
+            }
+        }
+        unset($record);
+
         $this->sortByTimestamp($records, 'createdAt');
         $payments = array_map(fn ($item) => (object) $item, $records);
         return view('admin.payments', compact('payments'));
@@ -640,19 +770,43 @@ class AdminController extends Controller
 
     public function supportTickets()
     {
-        $tickets =$this->getCollectionData('support_tickets');
-        $this->sortByTimestamp($tickets, 'createdAt');
-        $tickets = array_map(fn ($item) => (object) $item,$tickets);
-        return view('admin.support', compact('tickets'));
+        $tickets = $this->getCollectionData('support_tickets');
+        $isSuperAdmin = auth()->user()?->role === 'super_admin';
+
+        // Technical Bug / Error tickets are visible only to Super Admin.
+        if (!$isSuperAdmin) {
+            $tickets = array_values(array_filter($tickets, fn ($ticket) => !$this->isTechnicalSupportTicket($ticket)));
+        }
+
+        // Queue open tickets first, oldest submission first; resolved tickets follow.
+        usort($tickets, function ($a, $b) {
+            $openA = strtolower((string) ($a['status'] ?? 'open')) === 'open';
+            $openB = strtolower((string) ($b['status'] ?? 'open')) === 'open';
+            if ($openA !== $openB) return $openA ? -1 : 1;
+            $timeA = $this->timestampValue($a['createdAt'] ?? null);
+            $timeB = $this->timestampValue($b['createdAt'] ?? null);
+            if ($timeA === 0 && $timeB !== 0) return 1;
+            if ($timeB === 0 && $timeA !== 0) return -1;
+            return $timeA <=> $timeB;
+        });
+
+        $tickets = array_map(fn ($item) => (object) $item, $tickets);
+        return view('admin.support', compact('tickets', 'isSuperAdmin'));
     }
 
     public function resolveSupportTicket($id)
     {
-        $database =$this->initFirebase();
-        $database->collection('support_tickets')->document($id)->update([
-            ['path' => 'status', 'value' => 'Resolved'],
-        ]);
+        $database = $this->initFirebase();
+        $ticketRef = $database->collection('support_tickets')->document($id);
+        $snapshot = $ticketRef->snapshot();
+        if (!$snapshot->exists()) abort(404, 'Support ticket not found.');
+        $ticket = $snapshot->data() ?? [];
 
+        if ($this->isTechnicalSupportTicket($ticket)) {
+            $this->ensureSuperAdmin();
+        }
+
+        $ticketRef->update([['path' => 'status', 'value' => 'Resolved']]);
         $this->logAdminAction($id, 'Resolved Support Ticket', 'Resolved');
         return redirect()->back()->with('success', 'Support ticket marked as resolved successfully.');
     }

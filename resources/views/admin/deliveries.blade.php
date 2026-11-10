@@ -2,11 +2,23 @@
 
 @section('title', 'Deliveries & Live Tracking | Livestock Express')
 @section('header_title', 'Delivery Management')
-@section('header_subtitle', 'Monitor live livestock shipments and delivery progress across Alaminos City.')
+@section('header_subtitle', 'Schedule CVO on-site inspections, record results, and monitor approved livestock shipments across Alaminos City.')
 
 @section('content')
 @php
     $deliveryList = collect($deliveries ?? []);
+
+    $formatDeliveryTimestamp = function ($value) {
+        if (empty($value)) return null;
+        try {
+            if (is_object($value) && method_exists($value, 'get')) {
+                $value = $value->get();
+            }
+            return \Illuminate\Support\Carbon::parse($value)->format('M d, Y h:i A');
+        } catch (\Throwable $e) {
+            return null;
+        }
+    };
 
     $getStatus = function ($delivery) {
         $status = $delivery->orderStatus ?? $delivery->status ?? 'Pending Verification & Dispatch';
@@ -14,11 +26,11 @@
     };
 
     $pendingList = $deliveryList->filter(function ($delivery) use ($getStatus) {
-        return in_array($getStatus($delivery), ['pending', 'pending verification & dispatch', 'pending verification', 'pending dispatch', 'inspection pending', 'pending online inspection review'], true);
+        return in_array($getStatus($delivery), ['pending', 'pending verification & dispatch', 'pending verification', 'pending dispatch', 'inspection pending', 'pending online inspection review', 'pending cvo inspection', 'cvo inspection scheduled', 'for cvo reinspection', 'cvo inspection rejected'], true);
     });
 
     $dispatchedList = $deliveryList->filter(function ($delivery) use ($getStatus) {
-        return in_array($getStatus($delivery), ['dispatched', 'in transit', 'in_transit', 'city veterinary inspection approved'], true);
+        return in_array($getStatus($delivery), ['dispatched', 'in transit', 'in_transit', 'city veterinary inspection approved', 'ready for dispatch/pick up', 'ready for dispatch', 'ready for pick up'], true);
     });
 
     $deliveredList = $deliveryList->filter(function ($delivery) use ($getStatus) {
@@ -40,9 +52,9 @@
         <div class="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
             <div>
                 <p class="text-xs font-bold uppercase tracking-[0.18em] text-emerald-300">Livestock Express Operations</p>
-                <h3 class="mt-2 text-2xl font-extrabold">Live Delivery & Map Tracking</h3>
+                <h3 class="mt-2 text-2xl font-extrabold">CVO Inspection & Delivery Management</h3>
                 <p class="mt-2 max-w-xl text-sm leading-6 text-emerald-100">
-                    Real-time operational tracking and inspection review for livestock shipments moving across Alaminos City.
+                    CVO personnel visit the seller’s location. Sellers do not upload inspection photos or videos. Orders require approval before dispatch or pick up.
                 </p>
             </div>
         </div>
@@ -87,9 +99,9 @@
         <div class="p-6 border-b border-slate-100 flex items-center justify-between bg-white">
             <div class="flex items-center gap-3">
                 <div class="h-2.5 w-2.5 rounded-full bg-amber-500 animate-pulse"></div>
-                <h3 class="text-lg font-extrabold text-slate-900">Pending & Inspection Queue ({{ $pendingList->count() }})</h3>
+                <h3 class="text-lg font-extrabold text-slate-900">CVO On-Site Inspection Queue ({{ $pendingList->count() }})</h3>
             </div>
-            <span class="text-xs font-semibold text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">Requires Media Verification</span>
+            <span class="text-xs font-semibold text-amber-700 bg-amber-50 px-3 py-1 rounded-full border border-amber-200">Requires CVO Scheduling and Physical Inspection</span>
         </div>
         @if($pendingList->isEmpty())
             <div class="p-8 text-center text-sm text-slate-400">No pending or inspection deliveries found.</div>
@@ -132,26 +144,34 @@
                                     <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold bg-amber-50 text-amber-700 border border-amber-200">
                                         Pending Inspection
                                     </span>
+                                    <div class="mt-2 space-y-1 text-[11px] text-slate-500">
+                                        @if($createdAt = $formatDeliveryTimestamp($deliv->createdAt ?? null))
+                                            <div><span class="font-semibold text-slate-600">Order placed:</span> {{ $createdAt }}</div>
+                                        @endif
+                                        @if($scheduledAt = $formatDeliveryTimestamp($deliv->inspectionScheduledAt ?? null))
+                                            <div><span class="font-semibold text-slate-600">Inspection scheduled:</span> {{ $scheduledAt }}</div>
+                                        @endif
+                                        @if($submittedAt = $formatDeliveryTimestamp($deliv->inspectionSubmittedAt ?? $deliv->inspectionCompletedAt ?? null))
+                                            <div><span class="font-semibold text-slate-600">Inspection submitted:</span> {{ $submittedAt }}</div>
+                                        @endif
+                                    </div>
                                 </td>
                                 <td class="px-5 py-4 text-right">
-                                    <div class="flex items-center justify-end gap-2">
-                                        @if($hasMedia)
-                                            <button type="button" 
-                                                data-safe-media="{{ $safeMediaJson }}" 
-                                                onclick="openInspectionModalSafe(this)" 
-                                                class="rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-amber-800 hover:bg-amber-50 shadow-sm">
-                                                Inspect Media
-                                            </button>
-                                        @else
-                                            <button type="button" disabled class="rounded-xl border border-slate-200 bg-slate-100 px-3 py-2 text-xs font-bold text-slate-400 cursor-not-allowed">Not Uploaded Yet</button>
-                                        @endif
-
-                                        <form action="{{ route('admin.deliveries.updateStatus', $deliveryId) }}" method="POST" onsubmit="return confirm('Approve inspection and proceed to dispatch?');">
+<div class="flex items-center justify-end gap-2">
+                                        <form action="{{ route('admin.deliveries.scheduleInspection', $deliveryId) }}" method="POST" class="flex flex-wrap items-center justify-end gap-2">
                                             @csrf
-                                            @method('PUT')
-                                            <input type="hidden" name="orderStatus" value="City Veterinary Inspection Approved">
-                                            <button type="submit" class="rounded-xl bg-amber-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm hover:bg-amber-700">Approve & Dispatch</button>
+                                            <input type="datetime-local" name="inspectionDate" required class="rounded-lg border border-slate-300 px-2 py-2 text-xs">
+                                            <input type="text" name="inspectorName" required placeholder="CVO inspector" class="w-32 rounded-lg border border-slate-300 px-2 py-2 text-xs">
+                                            <button type="submit" class="rounded-xl bg-amber-600 px-3 py-2 text-xs font-bold text-white">Schedule Visit</button>
                                         </form>
+                                        @if(str_contains(strtolower((string)($deliv->orderStatus ?? '')), 'scheduled'))
+                                            <form action="{{ route('admin.deliveries.inspectionResult', $deliveryId) }}" method="POST" class="mt-2 flex flex-wrap justify-end gap-2">
+                                                @csrf
+                                                <input type="text" name="inspectionNotes" placeholder="Inspection notes (optional)" class="w-40 rounded-lg border border-slate-300 px-2 py-2 text-xs">
+                                                <select name="inspectionResult" required class="rounded-lg border border-slate-300 px-2 py-2 text-xs"><option value="">Record result</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="reinspection">For reinspection</option></select>
+                                                <button type="submit" class="rounded-xl bg-emerald-700 px-3 py-2 text-xs font-bold text-white">Save Result</button>
+                                            </form>
+                                        @endif
                                     </div>
                                 </td>
                             </tr>
@@ -191,10 +211,9 @@
                                 $deliveryId = $deliv->id ?? 'N/A';
                                 $livestockName = $deliv->livestock_name ?? $deliv->livestockName ?? 'Livestock Order';
                                 $destination = $deliv->destination ?? $deliv->deliveryAddress ?? 'Alaminos City';
-                                $photoUrl = $deliv->inspectionPhotoUrl ?? (isset($deliv->inspectionPhotos[0]) ? $deliv->inspectionPhotos[0] : '') ?? $deliv->imageUrl ?? '';
-                                $videoUrl = $deliv->inspectionVideoUrl ?? $deliv->videoUrl ?? '';
-                                $mediaArray = ['id' => $deliveryId, 'livestockName' => $livestockName, 'inspectionPhotoUrl' => $photoUrl, 'inspectionVideoUrl' => $videoUrl];
-                                $safeMediaJson = base64_encode(json_encode($mediaArray));
+                                $deliveryProofUrl = $deliv->deliveryProofUrl ?? '';
+                                $proofArray = ['id' => $deliveryId, 'livestockName' => $livestockName, 'deliveryProofUrl' => $deliveryProofUrl];
+                                $safeProofJson = base64_encode(json_encode($proofArray));
                             @endphp
                             <tr class="transition-colors hover:bg-slate-50/50">
                                 <td class="whitespace-nowrap px-5 py-4 font-mono text-xs font-bold text-slate-600">#{{ $deliveryId }}</td>
@@ -204,9 +223,22 @@
                                     <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
                                         In Transit / Dispatched
                                     </span>
+                                    @if($dispatchedAt = $formatDeliveryTimestamp($deliv->dispatchedAt ?? null))
+                                        <div class="mt-2 text-[11px] text-slate-500">
+                                            <span class="font-semibold text-slate-600">Dispatched:</span> {{ $dispatchedAt }}
+                                        </div>
+                                    @endif
                                 </td>
                                 <td class="px-5 py-4 text-right">
-                                    <button type="button" data-safe-media="{{ $safeMediaJson }}" onclick="openInspectionModalSafe(this)" class="rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-800 hover:bg-blue-50 shadow-sm">View Assets</button>
+                                    <button type="button"
+                                        data-order-id="{{ $deliveryId }}"
+                                        data-lat="{{ $deliv->latitude ?? $deliv->lat ?? '' }}"
+                                        data-lng="{{ $deliv->longitude ?? $deliv->lng ?? '' }}"
+                                        data-livestock="{{ e($livestockName) }}"
+                                        onclick="focusDeliveryLocation(this)"
+                                        class="rounded-xl border border-blue-200 bg-white px-3 py-2 text-xs font-bold text-blue-800 hover:bg-blue-50 shadow-sm">
+                                        View Location
+                                    </button>
                                 </td>
                             </tr>
                         @endforeach
@@ -245,10 +277,14 @@
                                 $deliveryId = $deliv->id ?? 'N/A';
                                 $livestockName = $deliv->livestock_name ?? $deliv->livestockName ?? 'Livestock Order';
                                 $destination = $deliv->destination ?? $deliv->deliveryAddress ?? 'Alaminos City';
-                                $photoUrl = $deliv->inspectionPhotoUrl ?? (isset($deliv->inspectionPhotos[0]) ? $deliv->inspectionPhotos[0] : '') ?? $deliv->imageUrl ?? '';
-                                $videoUrl = $deliv->inspectionVideoUrl ?? $deliv->videoUrl ?? '';
-                                $mediaArray = ['id' => $deliveryId, 'livestockName' => $livestockName, 'inspectionPhotoUrl' => $photoUrl, 'inspectionVideoUrl' => $videoUrl];
-                                $safeMediaJson = base64_encode(json_encode($mediaArray));
+                                // Match the exact field written by SellerOrdersScreen.
+                                $deliveryProofUrl = $deliv->deliveryProofUrl ?? '';
+                                $proofArray = [
+                                    'id' => $deliveryId,
+                                    'livestockName' => $livestockName,
+                                    'deliveryProofUrl' => $deliveryProofUrl,
+                                ];
+                                $safeProofJson = base64_encode(json_encode($proofArray));
                             @endphp
                             <tr class="transition-colors hover:bg-slate-50/50">
                                 <td class="whitespace-nowrap px-5 py-4 font-mono text-xs font-bold text-slate-600">#{{ $deliveryId }}</td>
@@ -258,9 +294,20 @@
                                     <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                                         Delivered & Completed
                                     </span>
+                                    <div class="mt-2 space-y-1 text-[11px] text-slate-500">
+                                        @if($dispatchedAt = $formatDeliveryTimestamp($deliv->dispatchedAt ?? null))
+                                            <div><span class="font-semibold text-slate-600">Dispatched:</span> {{ $dispatchedAt }}</div>
+                                        @endif
+                                        @if($inspectionSubmittedAt = $formatDeliveryTimestamp($deliv->inspectionSubmittedAt ?? $deliv->inspectionCompletedAt ?? null))
+                                            <div><span class="font-semibold text-slate-600">Inspection submitted:</span> {{ $inspectionSubmittedAt }}</div>
+                                        @endif
+                                        @if($deliveredAt = $formatDeliveryTimestamp($deliv->deliveredAt ?? null))
+                                            <div><span class="font-semibold text-slate-600">Delivered:</span> {{ $deliveredAt }}</div>
+                                        @endif
+                                    </div>
                                 </td>
                                 <td class="px-5 py-4 text-right">
-                                    <button type="button" data-safe-media="{{ $safeMediaJson }}" onclick="openInspectionModalSafe(this)" class="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-50 shadow-sm">View Assets</button>
+                                    <button type="button" data-safe-proof="{{ $safeProofJson }}" onclick="openDeliveryProofSafe(this)" class="rounded-xl border border-emerald-200 bg-white px-3 py-2 text-xs font-bold text-emerald-800 hover:bg-emerald-50 shadow-sm">View Delivery Proof</button>
                                 </td>
                             </tr>
                         @endforeach
@@ -277,8 +324,8 @@
     <div class="w-full max-w-2xl rounded-3xl bg-white shadow-2xl overflow-hidden">
         <div class="flex items-center justify-between border-b border-slate-100 px-6 py-4 bg-slate-50">
             <div>
-                <p class="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Seller Submission</p>
-                <h3 id="modalLivestockTitle" class="text-base font-extrabold text-slate-900">Inspection Assets</h3>
+                <p class="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Delivery Confirmation</p>
+                <h3 id="modalLivestockTitle" class="text-base font-extrabold text-slate-900">Delivery Proof</h3>
             </div>
             <button type="button" onclick="closeInspectionModal()" class="rounded-xl p-2 text-slate-400 hover:bg-slate-200">
                 <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -286,8 +333,8 @@
         </div>
         <div class="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
             <div>
-                <p class="text-xs font-bold text-slate-500 uppercase mb-2">Inspection Photo</p>
-                <img id="modalInspectPhoto" src="" alt="Inspection Photo" class="h-56 w-full rounded-2xl object-cover border border-slate-200 bg-slate-50">
+                <p class="text-xs font-bold text-slate-500 uppercase mb-2">Delivery Proof Photo</p>
+                <img id="modalInspectPhoto" src="" alt="Inspection Photo" class="max-h-[60vh] w-full rounded-2xl object-contain border border-slate-200 bg-slate-50">
             </div>
             <div>
                 <p class="text-xs font-bold text-slate-500 uppercase mb-2">Real-Time Inspection Video</p>
@@ -326,6 +373,7 @@ const db = firebase.firestore();
 let adminMap;
 let activeMarkers = {};
 let routeLines = {}; // Stores the road polyline path for each delivery
+let deliveryLocations = {}; // Latest GPS location per order
 
 function initAdminMap() {
     const alaminosCenter = { lat: 16.1556, lng: 119.9844 };
@@ -345,10 +393,12 @@ function initAdminMap() {
             const lng = Number(data.longitude || data.lng || 0);
             const livestockName = data.livestockName || data.livestock_name || 'Livestock Order';
 
-            const isDispatched = status.includes('dispatch') || status.includes('transit') || status.includes('shipping') || status.includes('approved');
+            // Inspection approval / ready-for-dispatch is NOT a dispatched shipment.
+            const isDispatched = ['dispatched', 'in transit', 'in_transit', 'shipping'].includes(status);
 
             if (isDispatched && lat !== 0 && lng !== 0) {
                 const position = { lat: lat, lng: lng };
+                deliveryLocations[docId] = position;
 
                 // Initialize path array for this order if it doesn't exist
                 if (!window.deliveryPaths) window.deliveryPaths = {};
@@ -402,6 +452,7 @@ function initAdminMap() {
                     routeLines[docId] = line;
                 }
             } else {
+                delete deliveryLocations[docId];
                 // Clean up markers and paths if order is completed
                 if (activeMarkers[docId]) {
                     activeMarkers[docId].setMap(null);
@@ -417,6 +468,87 @@ function initAdminMap() {
 }
 
 window.addEventListener('load', initAdminMap);
+
+function focusDeliveryLocation(button) {
+    if (!adminMap || !window.google || !google.maps) {
+        alert('The tracking map is not ready yet. Please refresh the page and try again.');
+        return;
+    }
+
+    const orderId = String(button.dataset.orderId || '');
+    const latitude = Number(button.dataset.lat);
+    const longitude = Number(button.dataset.lng);
+    const livestockName = button.dataset.livestock || 'Livestock Order';
+
+    // Prefer the latest live Firestore position; fall back to the saved dispatch coordinates.
+    const livePosition = deliveryLocations[orderId];
+    const position = livePosition || (
+        Number.isFinite(latitude) && Number.isFinite(longitude) && latitude !== 0 && longitude !== 0
+            ? { lat: latitude, lng: longitude }
+            : null
+    );
+
+    if (!position) {
+        alert('No GPS coordinates have been saved for this shipment. Ask the seller to dispatch the order with phone location enabled.');
+        return;
+    }
+
+    adminMap.panTo(position);
+    adminMap.setZoom(17);
+
+    let marker = activeMarkers[orderId];
+    if (!marker) {
+        marker = new google.maps.Marker({
+            position: position,
+            map: adminMap,
+            title: livestockName,
+            animation: google.maps.Animation.DROP
+        });
+        marker.addListener('click', () => {
+            const infoWindow = new google.maps.InfoWindow({
+                content: `<div style="padding:8px;"><strong>${livestockName}</strong><br>Latest saved GPS: ${position.lat.toFixed(6)}, ${position.lng.toFixed(6)}</div>`
+            });
+            infoWindow.open(adminMap, marker);
+        });
+        activeMarkers[orderId] = marker;
+    } else {
+        marker.setPosition(position);
+        marker.setMap(adminMap);
+    }
+
+    google.maps.event.trigger(marker, 'click');
+}
+
+function openDeliveryProofSafe(button) {
+    try {
+        const encoded = button.getAttribute('data-safe-proof');
+        const proof = JSON.parse(atob(encoded));
+        const title = document.getElementById('modalLivestockTitle');
+        const image = document.getElementById('modalInspectPhoto');
+        const video = document.getElementById('modalInspectVideo');
+        const noVideo = document.getElementById('modalNoVideo');
+        const videoContainer = document.getElementById('modalVideoContainer');
+        if (title) title.textContent = (proof.livestockName || 'Livestock') + ' — Delivery Proof (#' + proof.id + ')';
+        if (image) {
+            image.src = proof.deliveryProofUrl || '';
+            image.style.display = proof.deliveryProofUrl ? 'block' : 'none';
+        }
+        const photoLabel = image?.previousElementSibling;
+        if (photoLabel) photoLabel.textContent = 'Delivery Proof Photo';
+        if (videoContainer) videoContainer.style.display = 'none';
+        if (video) { video.pause(); video.src = ''; }
+        if (noVideo) noVideo.style.display = 'none';
+        if (!proof.deliveryProofUrl) {
+            alert('No delivery proof has been submitted for this order yet. Confirm that the seller completed the camera upload and that deliveryProofUrl exists on this Firestore order.');
+            return;
+        }
+        const modal = document.getElementById('inspectionModal');
+        if (modal) { modal.classList.remove('hidden'); modal.classList.add('flex'); }
+    } catch (error) {
+        console.error('Unable to open delivery proof:', error);
+        alert('Unable to open delivery proof.');
+    }
+}
 
 function openInspectionModalSafe(button) {
     try {
