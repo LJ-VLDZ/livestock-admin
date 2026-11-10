@@ -25,12 +25,18 @@
         return strtolower(trim((string) $status));
     };
 
+    $cancellationReviewList = $deliveryList->filter(function ($delivery) {
+        return strtolower((string) ($delivery->cancellationStatus ?? '')) === 'pending_review';
+    });
+
     $pendingList = $deliveryList->filter(function ($delivery) use ($getStatus) {
-        return in_array($getStatus($delivery), ['pending', 'pending verification & dispatch', 'pending verification', 'pending dispatch', 'inspection pending', 'pending online inspection review', 'pending cvo inspection', 'cvo inspection scheduled', 'for cvo reinspection', 'cvo inspection rejected'], true);
+        return strtolower((string) ($delivery->cancellationStatus ?? '')) !== 'pending_review'
+            && in_array($getStatus($delivery), ['pending', 'pending verification & dispatch', 'pending verification', 'pending dispatch', 'inspection pending', 'pending online inspection review', 'pending cvo inspection', 'cvo inspection scheduled', 'for cvo reinspection', 'cvo inspection rejected'], true);
     });
 
     $dispatchedList = $deliveryList->filter(function ($delivery) use ($getStatus) {
-        return in_array($getStatus($delivery), ['dispatched', 'in transit', 'in_transit', 'city veterinary inspection approved', 'ready for dispatch/pick up', 'ready for dispatch', 'ready for pick up'], true);
+        return strtolower((string) ($delivery->cancellationStatus ?? '')) !== 'pending_review'
+            && in_array($getStatus($delivery), ['dispatched', 'in transit', 'in_transit', 'city veterinary inspection approved', 'ready for dispatch/pick up', 'ready for dispatch', 'ready for pick up'], true);
     });
 
     $deliveredList = $deliveryList->filter(function ($delivery) use ($getStatus) {
@@ -92,6 +98,48 @@
             </span>
         </div>
         <div id="adminAlaminosMap" class="h-[450px] w-full rounded-xl border border-slate-200 shadow-inner"></div>
+    </section>
+
+    {{-- CANCELLATION REQUESTS: only post-CVO-approval requests require admin review. --}}
+    <section class="admin-card overflow-hidden">
+        <div class="p-6 border-b border-slate-100 flex items-center justify-between bg-white">
+            <div class="flex items-center gap-3">
+                <div class="h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse"></div>
+                <h3 class="text-lg font-extrabold text-slate-900">Cancellation Requests for Review ({{ $cancellationReviewList->count() }})</h3>
+            </div>
+            <span class="text-xs font-semibold text-rose-700 bg-rose-50 px-3 py-1 rounded-full border border-rose-200">Post-CVO approval only</span>
+        </div>
+        @if($cancellationReviewList->isEmpty())
+            <div class="p-8 text-center text-sm text-slate-400">No cancellation requests are waiting for review.</div>
+        @else
+            <div class="admin-scrollbar overflow-x-auto">
+                <table class="w-full min-w-[900px] text-left">
+                    <thead class="bg-slate-50/60"><tr class="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                        <th class="px-5 py-3">Order</th><th class="px-5 py-3">Livestock</th><th class="px-5 py-3">Buyer reason</th><th class="px-5 py-3">Requested</th><th class="px-5 py-3 text-right">Decision</th>
+                    </tr></thead>
+                    <tbody class="divide-y divide-slate-100 text-sm">
+                    @foreach($cancellationReviewList as $requestOrder)
+                        <tr class="hover:bg-slate-50/50">
+                            <td class="px-5 py-4 font-mono text-xs font-bold">#{{ $requestOrder->id ?? 'N/A' }}</td>
+                            <td class="px-5 py-4 font-semibold">{{ $requestOrder->livestockName ?? 'Livestock Order' }}</td>
+                            <td class="px-5 py-4 text-slate-600 whitespace-normal max-w-sm">{{ $requestOrder->cancellationReason ?? 'No reason supplied' }}</td>
+                            <td class="px-5 py-4 text-slate-500 text-xs">{{ $formatDeliveryTimestamp($requestOrder->cancellationRequestedAt ?? null) ?? '—' }}</td>
+                            <td class="px-5 py-4">
+                                <div class="flex justify-end gap-2">
+                                    <form method="POST" action="{{ route('admin.deliveries.reviewCancellation', $requestOrder->id) }}" class="flex gap-2 items-center">
+                                        @csrf
+                                        <input type="text" name="decisionReason" placeholder="Decision note (optional)" class="w-40 rounded-lg border border-slate-300 px-2 py-2 text-xs">
+                                        <button name="decision" value="approve" class="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white" onclick="return confirm('Approve cancellation and release the listing if it is still reserved by this order?')">Approve</button>
+                                        <button name="decision" value="reject" class="rounded-lg bg-rose-600 px-3 py-2 text-xs font-bold text-white" onclick="return confirm('Reject this cancellation request? The order will remain active.')">Reject</button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @endif
     </section>
 
     {{-- 1. PENDING & INSPECTION BLOCK --}}

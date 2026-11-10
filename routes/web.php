@@ -94,6 +94,9 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/admin/deliveries/{id}/inspection-result', [AdminController::class, 'recordCvoInspectionResult'])
         ->name('admin.deliveries.inspectionResult');
 
+    Route::post('/admin/deliveries/{id}/review-cancellation', [AdminController::class, 'reviewCancellation'])
+        ->name('admin.deliveries.reviewCancellation');
+
 
     // Payment Monitoring
     Route::get('/admin/payments', [AdminController::class, 'payments'])

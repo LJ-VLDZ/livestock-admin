@@ -565,6 +565,7 @@ class AdminController extends Controller
     public function deliveries()
     {
         $records = $this->getCollectionData('orders');
+        $this->sortByTimestamp($records, 'createdAt');
         $deliveries = [];
 
         foreach ($records as $item) {
@@ -572,8 +573,77 @@ class AdminController extends Controller
             $deliveries[] = (object) $item;
         }
 
-        $this->sortByTimestamp($records, 'createdAt');
         return view('admin.deliveries', compact('deliveries'));
+    }
+
+    /** Approve or reject a cancellation requested after CVO inspection approval. */
+    public function reviewCancellation(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'decision' => ['required', 'in:approve,reject'],
+            'decisionReason' => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        $database = $this->initFirebase();
+        $orderRef = $database->collection('orders')->document($id);
+        $orderSnapshot = $orderRef->snapshot();
+        if (!$orderSnapshot->exists()) {
+            return redirect()->back()->with('error', 'Order not found.');
+        }
+
+        $order = $orderSnapshot->data();
+        $cancellationStatus = strtolower((string) ($order['cancellationStatus'] ?? ''));
+        $orderStatus = strtolower((string) ($order['orderStatus'] ?? $order['status'] ?? ''));
+        $inspectionStatus = strtolower((string) ($order['inspectionStatus'] ?? ''));
+        $inspectionApproved = str_contains($inspectionStatus, 'approved')
+            || str_contains($orderStatus, 'inspection approved')
+            || str_contains($orderStatus, 'ready for dispatch')
+            || str_contains($orderStatus, 'ready for pick up');
+
+        if ($cancellationStatus !== 'pending_review' || !$inspectionApproved) {
+            return redirect()->back()->with('error', 'This order is not eligible for cancellation review.');
+        }
+        if (str_contains($orderStatus, 'dispatch') || str_contains($orderStatus, 'transit')
+            || in_array($orderStatus, ['delivered', 'completed', 'cancelled'], true)) {
+            return redirect()->back()->with('error', 'This order has already entered fulfillment and cannot be reviewed for in-app cancellation.');
+        }
+
+        $now = \Google\Cloud\Firestore\FieldValue::serverTimestamp();
+        $decision = $validated['decision'];
+        $update = [
+            ['path' => 'cancellationStatus', 'value' => $decision === 'approve' ? 'approved' : 'rejected'],
+            ['path' => 'cancellationDecision', 'value' => $decision === 'approve' ? 'Approved by Admin/CVO' : 'Rejected by Admin/CVO'],
+            ['path' => 'cancellationDecisionReason', 'value' => $validated['decisionReason'] ?? ''],
+            ['path' => 'cancellationDecidedAt', 'value' => $now],
+            ['path' => 'cancellationDecidedBy', 'value' => auth()->user()->email ?? auth()->id()],
+        ];
+
+        if ($decision === 'approve') {
+            $update[] = ['path' => 'orderStatus', 'value' => 'Cancelled'];
+            $update[] = ['path' => 'cancelledAt', 'value' => $now];
+            $listingId = (string) ($order['listingId'] ?? $order['livestockId'] ?? '');
+            if ($listingId !== '') {
+                $listingRef = $database->collection('livestock')->document($listingId);
+                $listingSnapshot = $listingRef->snapshot();
+                if ($listingSnapshot->exists()) {
+                    $listing = $listingSnapshot->data();
+                    if (($listing['orderId'] ?? null) === $id
+                        && strtolower((string) ($listing['status'] ?? '')) === 'ordered') {
+                        $listingRef->update([
+                            ['path' => 'status', 'value' => 'Available'],
+                            ['path' => 'isAvailable', 'value' => true],
+                            ['path' => 'orderId', 'value' => \Google\Cloud\Firestore\FieldValue::delete()],
+                        ]);
+                    }
+                }
+            }
+        }
+
+        $orderRef->update($update);
+        $this->logAdminAction($id, 'Reviewed Order Cancellation', $decision === 'approve' ? 'Approved' : 'Rejected');
+        return redirect()->back()->with('success', $decision === 'approve'
+            ? 'Cancellation approved. The listing was released if it was still reserved by this order.'
+            : 'Cancellation request rejected. The order remains active.');
     }
 
     public function updateOrderStatus(Request $request, $id)
