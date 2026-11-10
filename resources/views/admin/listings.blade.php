@@ -91,6 +91,7 @@
                 <button type="button" data-status="available" class="status-tab rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50">Available</button>
                 <button type="button" data-status="pending" class="status-tab rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50">Pending</button>
                 <button type="button" data-status="ordered" class="status-tab rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50">Ordered / Sold</button>
+                <button type="button" data-status="expired" class="status-tab rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50">Expired</button>
             </div>
 
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 pt-2">
@@ -192,6 +193,10 @@
                                     @elseif($rawStatus === 'rejected')
                                         <span class="inline-flex items-center gap-1.5 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700">
                                             <span class="h-1.5 w-1.5 rounded-full bg-rose-500"></span> Rejected
+                                        </span>
+                                    @elseif($rawStatus === 'expired')
+                                        <span class="inline-flex items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 py-1 text-xs font-bold text-orange-700">
+                                            <span class="h-1.5 w-1.5 rounded-full bg-orange-500"></span> Expired
                                         </span>
                                     @else
                                         <span class="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-600">
@@ -426,6 +431,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 matchesStatus = statusData === 'pending';
             } else if (currentStatus === 'ordered') {
                 matchesStatus = statusData === 'ordered' || statusData === 'sold';
+            } else if (currentStatus === 'expired') {
+                matchesStatus = statusData === 'expired';
             }
 
             if (matchesSearch && matchesCategory && matchesStatus) {
