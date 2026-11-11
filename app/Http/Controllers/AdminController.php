@@ -696,47 +696,17 @@ class AdminController extends Controller
             'inspectorName' => ['required', 'string', 'max:150'],
             'inspectionNotes' => ['nullable', 'string', 'max:1000'],
         ]);
-
         $database = $this->initFirebase();
-        $orderRef = $database->collection('orders')->document($id);
-        $snapshot = $orderRef->snapshot();
-
-        if (!$snapshot->exists()) {
-            return redirect()->back()->with('error', 'Order not found.');
-        }
-
-        $order = $snapshot->data() ?? [];
-        $existingHistory = $order['inspectionHistory'] ?? [];
-        if (!is_array($existingHistory)) {
-            $existingHistory = [];
-        }
-
-        // Preserve the previous visit details before a reinspection is scheduled.
-        if (!empty($order['inspectionDate']) || !empty($order['inspectorName'])) {
-            $existingHistory[] = [
-                'inspectionDate' => $order['inspectionDate'] ?? null,
-                'inspectorName' => $order['inspectorName'] ?? null,
-                'inspectionStatus' => $order['inspectionStatus'] ?? null,
-                'inspectionResult' => $order['inspectionResult'] ?? null,
-                'inspectionNotes' => $order['inspectionResultNotes'] ?? $order['inspectionNotes'] ?? '',
-                'recordedAt' => now()->toIso8601String(),
-            ];
-        }
-
-        $updatePayload = [
+        $database->collection('orders')->document($id)->update([
             ['path' => 'inspectionStatus', 'value' => 'Scheduled'],
             ['path' => 'inspectionDate', 'value' => $validated['inspectionDate']],
-            ['path' => 'inspectorName', 'value' => trim($validated['inspectorName'])],
+            ['path' => 'inspectorName', 'value' => $validated['inspectorName']],
             ['path' => 'inspectionNotes', 'value' => $validated['inspectionNotes'] ?? ''],
             ['path' => 'inspectionScheduledAt', 'value' => \Google\Cloud\Firestore\FieldValue::serverTimestamp()],
             ['path' => 'orderStatus', 'value' => 'CVO Inspection Scheduled'],
-            ['path' => 'inspectionHistory', 'value' => $existingHistory],
-        ];
-
-        $orderRef->update($updatePayload);
-
-        $this->logAdminAction($id, 'Scheduled CVO On-Site Inspection', $validated['inspectionDate'] . ' — ' . trim($validated['inspectorName']));
-        return redirect()->back()->with('success', 'CVO on-site inspection scheduled successfully. The date and inspector details have been saved.');
+        ]);
+        $this->logAdminAction($id, 'Scheduled CVO On-Site Inspection', $validated['inspectionDate']);
+        return redirect()->back()->with('success', 'CVO on-site inspection scheduled successfully.');
     }
 
     public function recordCvoInspectionResult(Request $request, $id)
@@ -746,24 +716,9 @@ class AdminController extends Controller
             'inspectionNotes' => ['nullable', 'string', 'max:1000'],
             'expectedFulfillmentDate' => ['required_if:inspectionResult,approved', 'nullable', 'date', 'after_or_equal:today'],
         ]);
-
-        $database = $this->initFirebase();
-        $orderRef = $database->collection('orders')->document($id);
-        $snapshot = $orderRef->snapshot();
-
-        if (!$snapshot->exists()) {
-            return redirect()->back()->with('error', 'Order not found.');
-        }
-
-        $order = $snapshot->data() ?? [];
-        if (empty($order['inspectionDate']) || empty($order['inspectorName'])) {
-            return redirect()->back()->with('error', 'Please schedule the inspection date and assign a CVO inspector before recording the result.');
-        }
-
         $result = $validated['inspectionResult'];
-        $status = $result === 'approved'
-            ? 'CVO Inspection Approved'
-            : ($result === 'rejected' ? 'CVO Inspection Rejected' : 'For CVO Reinspection');
+        $status = $result === 'approved' ? 'CVO Inspection Approved' : ($result === 'rejected' ? 'CVO Inspection Rejected' : 'For CVO Reinspection');
+        $database = $this->initFirebase();
 
         $updatePayload = [
             ['path' => 'inspectionStatus', 'value' => ucfirst($result)],
@@ -774,8 +729,7 @@ class AdminController extends Controller
             ['path' => 'orderStatus', 'value' => $result === 'approved' ? 'Ready for Dispatch/Pick Up' : $status],
         ];
 
-        // Keep the saved inspection date and inspector name. Only the planned
-        // delivery/pickup date is set or cleared according to the inspection result.
+        // This is the planned delivery/pickup date, not the CVO inspection visit date.
         if ($result === 'approved') {
             $updatePayload[] = ['path' => 'expectedFulfillmentDate', 'value' => $validated['expectedFulfillmentDate']];
             $updatePayload[] = ['path' => 'expectedFulfillmentDateSetAt', 'value' => \Google\Cloud\Firestore\FieldValue::serverTimestamp()];
@@ -783,9 +737,9 @@ class AdminController extends Controller
             $updatePayload[] = ['path' => 'expectedFulfillmentDate', 'value' => null];
         }
 
-        $orderRef->update($updatePayload);
-        $this->logAdminAction($id, 'Recorded CVO Inspection Result', $status . ' — Inspector: ' . ($order['inspectorName'] ?? 'N/A'));
-        return redirect()->back()->with('success', 'CVO inspection result recorded. The inspection date and inspector name were retained.');
+        $database->collection('orders')->document($id)->update($updatePayload);
+        $this->logAdminAction($id, 'Recorded CVO Inspection Result', $status);
+        return redirect()->back()->with('success', 'CVO inspection result recorded.');
     }
 
     public function payments()
@@ -910,21 +864,64 @@ class AdminController extends Controller
         return view('admin.support', compact('tickets', 'isSuperAdmin'));
     }
 
-    public function resolveSupportTicket($id)
+    public function resolveSupportTicket(Request $request, $id)
     {
+        $validated = $request->validate([
+            'resolutionMessage' => ['required', 'string', 'min:5', 'max:2000'],
+        ], [
+            'resolutionMessage.required' => 'Please enter a response before resolving this ticket.',
+            'resolutionMessage.min' => 'The response must contain at least 5 characters.',
+        ]);
+
         $database = $this->initFirebase();
         $ticketRef = $database->collection('support_tickets')->document($id);
         $snapshot = $ticketRef->snapshot();
-        if (!$snapshot->exists()) abort(404, 'Support ticket not found.');
-        $ticket = $snapshot->data() ?? [];
 
+        if (!$snapshot->exists()) {
+            abort(404, 'Support ticket not found.');
+        }
+
+        $ticket = $snapshot->data() ?? [];
         if ($this->isTechnicalSupportTicket($ticket)) {
             $this->ensureSuperAdmin();
         }
 
-        $ticketRef->update([['path' => 'status', 'value' => 'Resolved']]);
+        $currentStatus = strtolower(trim((string) ($ticket['status'] ?? 'open')));
+        if ($currentStatus === 'resolved') {
+            return redirect()->back()->with('success', 'This support ticket has already been resolved.');
+        }
+
+        $admin = auth()->user();
+        $resolutionMessage = trim($validated['resolutionMessage']);
+        $resolvedBy = $admin->name ?? $admin->email ?? 'City Veterinary Office';
+
+        $ticketRef->update([
+            ['path' => 'status', 'value' => 'Resolved'],
+            ['path' => 'resolutionMessage', 'value' => $resolutionMessage],
+            ['path' => 'resolvedAt', 'value' => \Google\Cloud\Firestore\FieldValue::serverTimestamp()],
+            ['path' => 'resolvedBy', 'value' => $resolvedBy],
+        ]);
+
+        // Notify the ticket owner in the app and, when an FCM token exists, by push notification.
+        $userId = trim((string) ($ticket['userId'] ?? $ticket['user_id'] ?? $ticket['uid'] ?? ''));
+        if ($userId !== '') {
+            $notificationBody = 'Your support ticket "' . ($ticket['subject'] ?? 'Support request') . '" has been resolved. Admin response: ' . $resolutionMessage;
+            $this->sendFirestoreNotification(
+                $userId,
+                'Support Ticket Resolved',
+                $notificationBody,
+                'support_reply'
+            );
+        } else {
+            Log::warning('Support ticket resolved without a user ID; notification skipped.', ['ticket_id' => $id]);
+        }
+
         $this->logAdminAction($id, 'Resolved Support Ticket', 'Resolved');
-        return redirect()->back()->with('success', 'Support ticket marked as resolved successfully.');
+
+        return redirect()->back()->with(
+            'success',
+            'Support ticket resolved. The response has been saved and the user has been notified when a valid user ID was available.'
+        );
     }
 
     public function updateStatus(Request $request,$id)
