@@ -29,6 +29,14 @@
         return strtolower((string) ($delivery->cancellationStatus ?? '')) === 'pending_review';
     });
 
+    // Includes automatic pre-CVO cancellations and completed admin decisions.
+    $cancelledOrdersList = $deliveryList->filter(function ($delivery) use ($getStatus) {
+        $orderStatus = $getStatus($delivery);
+        $cancellationStatus = strtolower(trim((string) ($delivery->cancellationStatus ?? '')));
+        return $orderStatus === 'cancelled'
+            || in_array($cancellationStatus, ['approved', 'rejected'], true);
+    });
+
     $pendingList = $deliveryList->filter(function ($delivery) use ($getStatus) {
         return strtolower((string) ($delivery->cancellationStatus ?? '')) !== 'pending_review'
             && in_array($getStatus($delivery), ['pending', 'pending verification & dispatch', 'pending verification', 'pending dispatch', 'inspection pending', 'pending online inspection review', 'pending cvo inspection', 'cvo inspection scheduled', 'for cvo reinspection', 'cvo inspection rejected'], true);
@@ -136,6 +144,50 @@
                             </td>
                         </tr>
                     @endforeach
+                    </tbody>
+                </table>
+            </div>
+        @endif
+    </section>
+
+    {{-- Cancellation history: automatic cancellations and admin decisions. --}}
+    <section class="admin-card overflow-hidden">
+        <div class="p-6 border-b border-slate-100 flex items-center justify-between bg-white">
+            <h3 class="text-lg font-extrabold text-slate-900">Cancelled Orders History ({{ $cancelledOrdersList->count() }})</h3>
+            <span class="text-xs font-semibold text-slate-600 bg-slate-100 px-3 py-1 rounded-full">Automatic and reviewed cancellations</span>
+        </div>
+        @if($cancelledOrdersList->isEmpty())
+            <div class="p-8 text-center text-sm text-slate-400">No cancelled orders have been recorded.</div>
+        @else
+            <div class="admin-scrollbar overflow-x-auto">
+                <table class="w-full min-w-[850px] text-left">
+                    <thead class="bg-slate-50/60">
+                        <tr class="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                            <th class="px-5 py-3">Order ID</th>
+                            <th class="px-5 py-3">Livestock</th>
+                            <th class="px-5 py-3">Cancellation Status</th>
+                            <th class="px-5 py-3">Reason</th>
+                            <th class="px-5 py-3">Cancelled / Requested</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100 text-sm">
+                        @foreach($cancelledOrdersList as $cancelledOrder)
+                            @php
+                                $cancelState = strtolower(trim((string) ($cancelledOrder->cancellationStatus ?? '')));
+                                $displayCancelState = $cancelState === 'rejected'
+                                    ? 'Request Rejected'
+                                    : 'Cancelled';
+                            @endphp
+                            <tr class="hover:bg-slate-50/50">
+                                <td class="px-5 py-4 font-mono text-xs font-bold">#{{ $cancelledOrder->id ?? 'N/A' }}</td>
+                                <td class="px-5 py-4 font-semibold">{{ $cancelledOrder->livestockName ?? $cancelledOrder->livestock_name ?? 'Livestock Order' }}</td>
+                                <td class="px-5 py-4">
+                                    <span class="rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700">{{ $displayCancelState }}</span>
+                                </td>
+                                <td class="px-5 py-4 text-slate-600 whitespace-normal max-w-sm">{{ $cancelledOrder->cancellationReason ?? $cancelledOrder->cancellationDecisionReason ?? 'No reason recorded' }}</td>
+                                <td class="px-5 py-4 text-xs text-slate-500">{{ $formatDeliveryTimestamp($cancelledOrder->cancelledAt ?? $cancelledOrder->cancellationRequestedAt ?? $cancelledOrder->cancellationDecidedAt ?? null) ?? '—' }}</td>
+                            </tr>
+                        @endforeach
                     </tbody>
                 </table>
             </div>

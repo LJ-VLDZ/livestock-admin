@@ -92,6 +92,7 @@
                 <button type="button" data-status="pending" class="status-tab rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50">Pending</button>
                 <button type="button" data-status="ordered" class="status-tab rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50">Ordered / Sold</button>
                 <button type="button" data-status="expired" class="status-tab rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50">Expired</button>
+                <button type="button" data-status="rejected" class="status-tab rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-bold text-slate-700 transition hover:bg-slate-50">Rejected</button>
             </div>
 
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 pt-2">
@@ -433,6 +434,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 matchesStatus = statusData === 'ordered' || statusData === 'sold';
             } else if (currentStatus === 'expired') {
                 matchesStatus = statusData === 'expired';
+            } else if (currentStatus === 'rejected') {
+                matchesStatus = statusData === 'rejected';
             }
 
             if (matchesSearch && matchesCategory && matchesStatus) {
