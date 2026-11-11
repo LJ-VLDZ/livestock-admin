@@ -20,6 +20,18 @@
         }
     };
 
+    $formatInspectionInput = function ($value) {
+        if (empty($value)) return '';
+        try {
+            if (is_object($value) && method_exists($value, 'get')) {
+                $value = $value->get();
+            }
+            return \\Illuminate\\Support\\Carbon::parse($value)->format('Y-m-d\\TH:i');
+        } catch (\\Throwable $e) {
+            return '';
+        }
+    };
+
     $getStatus = function ($delivery) {
         $status = $delivery->orderStatus ?? $delivery->status ?? 'Pending Verification & Dispatch';
         return strtolower(trim((string) $status));
@@ -251,6 +263,29 @@
                                         @if($scheduledAt = $formatDeliveryTimestamp($deliv->inspectionScheduledAt ?? null))
                                             <div><span class="font-semibold text-slate-600">Inspection scheduled:</span> {{ $scheduledAt }}</div>
                                         @endif
+                                        @if(!empty($deliv->inspectionDate))
+                                            <div><span class="font-semibold text-slate-600">Visit date:</span> {{ $formatDeliveryTimestamp($deliv->inspectionDate) ?? $deliv->inspectionDate }}</div>
+                                        @endif
+                                        @if(!empty($deliv->inspectorName))
+                                            <div><span class="font-semibold text-slate-600">Assigned inspector:</span> {{ $deliv->inspectorName }}</div>
+                                        @endif
+                                        @if(!empty($deliv->inspectionResult))
+                                            <div><span class="font-semibold text-slate-600">Last result:</span> {{ $deliv->inspectionResult }}</div>
+                                        @endif
+                                        @if(!empty($deliv->inspectionHistory) && is_array($deliv->inspectionHistory))
+                                            <div class="pt-1">
+                                                <span class="font-semibold text-slate-600">Previous inspection visits:</span>
+                                                @foreach($deliv->inspectionHistory as $previousVisit)
+                                                    <div class="mt-1 pl-2">
+                                                        {{ $previousVisit['inspectionDate'] ?? 'Date not recorded' }}
+                                                        — {{ $previousVisit['inspectorName'] ?? 'Inspector not recorded' }}
+                                                        @if(!empty($previousVisit['inspectionResult']))
+                                                            ({{ $previousVisit['inspectionResult'] }})
+                                                        @endif
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @endif
                                         @if($submittedAt = $formatDeliveryTimestamp($deliv->inspectionSubmittedAt ?? $deliv->inspectionCompletedAt ?? null))
                                             <div><span class="font-semibold text-slate-600">Inspection submitted:</span> {{ $submittedAt }}</div>
                                         @endif
@@ -260,15 +295,21 @@
 <div class="flex items-center justify-end gap-2">
                                         <form action="{{ route('admin.deliveries.scheduleInspection', $deliveryId) }}" method="POST" class="flex flex-wrap items-center justify-end gap-2">
                                             @csrf
-                                            <input type="datetime-local" name="inspectionDate" required class="rounded-lg border border-slate-300 px-2 py-2 text-xs">
-                                            <input type="text" name="inspectorName" required placeholder="CVO inspector" class="w-32 rounded-lg border border-slate-300 px-2 py-2 text-xs">
-                                            <button type="submit" class="rounded-xl bg-amber-600 px-3 py-2 text-xs font-bold text-white">Schedule Visit</button>
+                                            <input type="datetime-local" name="inspectionDate" required value="{{ $formatInspectionInput($deliv->inspectionDate ?? null) }}" class="rounded-lg border border-slate-300 px-2 py-2 text-xs" aria-label="Inspection date and time">
+                                            <input type="text" name="inspectorName" required maxlength="150" value="{{ $deliv->inspectorName ?? '' }}" placeholder="CVO inspector" class="w-32 rounded-lg border border-slate-300 px-2 py-2 text-xs" aria-label="CVO inspector name">
+                                            <button type="submit" class="rounded-xl bg-amber-600 px-3 py-2 text-xs font-bold text-white">{{ !empty($deliv->inspectionDate) ? 'Update Visit' : 'Schedule Visit' }}</button>
                                         </form>
                                         @if(str_contains(strtolower((string)($deliv->orderStatus ?? '')), 'scheduled'))
-                                            <form action="{{ route('admin.deliveries.inspectionResult', $deliveryId) }}" method="POST" class="mt-2 flex flex-wrap justify-end gap-2">
+                                            <form action="{{ route('admin.deliveries.inspectionResult', $deliveryId) }}" method="POST" class="mt-2 flex flex-wrap justify-end gap-2" data-inspection-result-form>
                                                 @csrf
-                                                <input type="text" name="inspectionNotes" placeholder="Inspection notes (optional)" class="w-40 rounded-lg border border-slate-300 px-2 py-2 text-xs">
-                                                <select name="inspectionResult" required class="rounded-lg border border-slate-300 px-2 py-2 text-xs"><option value="">Record result</option><option value="approved">Approved</option><option value="rejected">Rejected</option><option value="reinspection">For reinspection</option></select>
+                                                <input type="text" name="inspectionNotes" value="{{ $deliv->inspectionResultNotes ?? '' }}" placeholder="Inspection notes (optional)" class="w-40 rounded-lg border border-slate-300 px-2 py-2 text-xs">
+                                                <select name="inspectionResult" required class="rounded-lg border border-slate-300 px-2 py-2 text-xs" data-inspection-result>
+                                                    <option value="">Record result</option>
+                                                    <option value="approved">Approved</option>
+                                                    <option value="rejected">Rejected</option>
+                                                    <option value="reinspection">For reinspection</option>
+                                                </select>
+                                                <input type="date" name="expectedFulfillmentDate" min="{{ now()->toDateString() }}" value="{{ !empty($deliv->expectedFulfillmentDate) ? $deliv->expectedFulfillmentDate : '' }}" class="rounded-lg border border-slate-300 px-2 py-2 text-xs" data-fulfillment-date aria-label="Expected delivery or pickup date">
                                                 <button type="submit" class="rounded-xl bg-emerald-700 px-3 py-2 text-xs font-bold text-white">Save Result</button>
                                             </form>
                                         @endif
@@ -454,7 +495,27 @@
 @endsection
 
 @push('scripts')
-<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBUKpYKSAinYNN7yclU_IWE911QgBl2cXM&libraries=places"></script>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBUKpYKSAinYNN7yclU_IWE911QgBl2cXM&libraries=places">
+document.querySelectorAll('[data-inspection-result-form]').forEach((form) => {
+    const resultSelect = form.querySelector('[data-inspection-result]');
+    const fulfillmentDate = form.querySelector('[data-fulfillment-date]');
+
+    const syncFulfillmentDate = () => {
+        const isApproved = resultSelect && resultSelect.value === 'approved';
+        if (fulfillmentDate) {
+            fulfillmentDate.required = isApproved;
+            fulfillmentDate.disabled = !isApproved;
+            fulfillmentDate.classList.toggle('hidden', !isApproved);
+        }
+    };
+
+    if (resultSelect) {
+        resultSelect.addEventListener('change', syncFulfillmentDate);
+        syncFulfillmentDate();
+    }
+});
+
+</script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
 

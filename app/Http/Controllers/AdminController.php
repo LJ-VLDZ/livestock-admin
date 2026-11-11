@@ -696,17 +696,47 @@ class AdminController extends Controller
             'inspectorName' => ['required', 'string', 'max:150'],
             'inspectionNotes' => ['nullable', 'string', 'max:1000'],
         ]);
+
         $database = $this->initFirebase();
-        $database->collection('orders')->document($id)->update([
+        $orderRef = $database->collection('orders')->document($id);
+        $snapshot = $orderRef->snapshot();
+
+        if (!$snapshot->exists()) {
+            return redirect()->back()->with('error', 'Order not found.');
+        }
+
+        $order = $snapshot->data() ?? [];
+        $existingHistory = $order['inspectionHistory'] ?? [];
+        if (!is_array($existingHistory)) {
+            $existingHistory = [];
+        }
+
+        // Preserve the previous visit details before a reinspection is scheduled.
+        if (!empty($order['inspectionDate']) || !empty($order['inspectorName'])) {
+            $existingHistory[] = [
+                'inspectionDate' => $order['inspectionDate'] ?? null,
+                'inspectorName' => $order['inspectorName'] ?? null,
+                'inspectionStatus' => $order['inspectionStatus'] ?? null,
+                'inspectionResult' => $order['inspectionResult'] ?? null,
+                'inspectionNotes' => $order['inspectionResultNotes'] ?? $order['inspectionNotes'] ?? '',
+                'recordedAt' => now()->toIso8601String(),
+            ];
+        }
+
+        $updatePayload = [
             ['path' => 'inspectionStatus', 'value' => 'Scheduled'],
             ['path' => 'inspectionDate', 'value' => $validated['inspectionDate']],
-            ['path' => 'inspectorName', 'value' => $validated['inspectorName']],
+            ['path' => 'inspectorName', 'value' => trim($validated['inspectorName'])],
             ['path' => 'inspectionNotes', 'value' => $validated['inspectionNotes'] ?? ''],
             ['path' => 'inspectionScheduledAt', 'value' => \Google\Cloud\Firestore\FieldValue::serverTimestamp()],
             ['path' => 'orderStatus', 'value' => 'CVO Inspection Scheduled'],
-        ]);
-        $this->logAdminAction($id, 'Scheduled CVO On-Site Inspection', $validated['inspectionDate']);
-        return redirect()->back()->with('success', 'CVO on-site inspection scheduled successfully.');
+            ['path' => 'inspectionHistory', 'value' => $existingHistory],
+        ];
+
+        $orderRef->update($updatePayload);
+
+        $this->logAdminAction($id, 'Scheduled CVO On-Site Inspection', $validated['inspectionDate'] . ' — ' . trim($validated['inspectorName']));
+        return redirect()->back()->with('success', 'CVO on-site inspection scheduled successfully. The date and inspector details have been saved.');
     }
 
     public function recordCvoInspectionResult(Request $request, $id)
@@ -716,9 +746,24 @@ class AdminController extends Controller
             'inspectionNotes' => ['nullable', 'string', 'max:1000'],
             'expectedFulfillmentDate' => ['required_if:inspectionResult,approved', 'nullable', 'date', 'after_or_equal:today'],
         ]);
-        $result = $validated['inspectionResult'];
-        $status = $result === 'approved' ? 'CVO Inspection Approved' : ($result === 'rejected' ? 'CVO Inspection Rejected' : 'For CVO Reinspection');
+
         $database = $this->initFirebase();
+        $orderRef = $database->collection('orders')->document($id);
+        $snapshot = $orderRef->snapshot();
+
+        if (!$snapshot->exists()) {
+            return redirect()->back()->with('error', 'Order not found.');
+        }
+
+        $order = $snapshot->data() ?? [];
+        if (empty($order['inspectionDate']) || empty($order['inspectorName'])) {
+            return redirect()->back()->with('error', 'Please schedule the inspection date and assign a CVO inspector before recording the result.');
+        }
+
+        $result = $validated['inspectionResult'];
+        $status = $result === 'approved'
+            ? 'CVO Inspection Approved'
+            : ($result === 'rejected' ? 'CVO Inspection Rejected' : 'For CVO Reinspection');
 
         $updatePayload = [
             ['path' => 'inspectionStatus', 'value' => ucfirst($result)],
@@ -729,7 +774,8 @@ class AdminController extends Controller
             ['path' => 'orderStatus', 'value' => $result === 'approved' ? 'Ready for Dispatch/Pick Up' : $status],
         ];
 
-        // This is the planned delivery/pickup date, not the CVO inspection visit date.
+        // Keep the saved inspection date and inspector name. Only the planned
+        // delivery/pickup date is set or cleared according to the inspection result.
         if ($result === 'approved') {
             $updatePayload[] = ['path' => 'expectedFulfillmentDate', 'value' => $validated['expectedFulfillmentDate']];
             $updatePayload[] = ['path' => 'expectedFulfillmentDateSetAt', 'value' => \Google\Cloud\Firestore\FieldValue::serverTimestamp()];
@@ -737,9 +783,9 @@ class AdminController extends Controller
             $updatePayload[] = ['path' => 'expectedFulfillmentDate', 'value' => null];
         }
 
-        $database->collection('orders')->document($id)->update($updatePayload);
-        $this->logAdminAction($id, 'Recorded CVO Inspection Result', $status);
-        return redirect()->back()->with('success', 'CVO inspection result recorded.');
+        $orderRef->update($updatePayload);
+        $this->logAdminAction($id, 'Recorded CVO Inspection Result', $status . ' — Inspector: ' . ($order['inspectorName'] ?? 'N/A'));
+        return redirect()->back()->with('success', 'CVO inspection result recorded. The inspection date and inspector name were retained.');
     }
 
     public function payments()
