@@ -26,8 +26,8 @@
             if (is_object($value) && method_exists($value, 'get')) {
                 $value = $value->get();
             }
-            return \\Illuminate\\Support\\Carbon::parse($value)->format('Y-m-d\\TH:i');
-        } catch (\\Throwable $e) {
+            return \Illuminate\Support\Carbon::parse($value)->format('Y-m-d\\TH:i');
+        } catch (\Throwable $e) {
             return '';
         }
     };
